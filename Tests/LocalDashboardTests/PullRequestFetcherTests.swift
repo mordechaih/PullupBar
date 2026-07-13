@@ -6,6 +6,7 @@ private struct FakeGHRunner: ProcessRunning {
     let detailOutputs: [String: String]
 
     func run(_ path: String, _ args: [String]) -> String? {
+        if path == "/bin/zsh" { return "/usr/bin/gh" }
         if args.contains("search") { return searchOutput }
         if args.contains("view"), let number = args.first(where: { Int($0) != nil }) {
             return detailOutputs[number]
@@ -49,5 +50,31 @@ final class PullRequestFetcherTests: XCTestCase {
     func testEmptySearchResultsReturnsEmptyArray() {
         let runner = FakeGHRunner(searchOutput: "[]", detailOutputs: [:])
         XCTAssertEqual(fetchPullRequests(runner: runner)?.count, 0)
+    }
+
+    func testReturnsNilWhenGHCannotBeResolved() {
+        struct NoGHRunner: ProcessRunning {
+            func run(_ path: String, _ args: [String]) -> String? {
+                path == "/bin/zsh" ? "" : nil
+            }
+        }
+        XCTAssertNil(fetchPullRequests(runner: NoGHRunner()))
+    }
+
+    func testResolveGHExecutablePathUsesLoginShellLookup() {
+        struct EchoPathRunner: ProcessRunning {
+            func run(_ path: String, _ args: [String]) -> String? {
+                guard path == "/bin/zsh", args == ["-l", "-c", "command -v gh"] else { return nil }
+                return "/opt/homebrew/bin/gh\n"
+            }
+        }
+        XCTAssertEqual(resolveGHExecutablePath(runner: EchoPathRunner()), "/opt/homebrew/bin/gh")
+    }
+
+    func testResolveGHExecutablePathReturnsNilWhenNotFound() {
+        struct EmptyRunner: ProcessRunning {
+            func run(_ path: String, _ args: [String]) -> String? { "" }
+        }
+        XCTAssertNil(resolveGHExecutablePath(runner: EmptyRunner()))
     }
 }

@@ -9,7 +9,8 @@ private struct FakeTokenProvider: KeychainTokenProviding {
 private struct FakeRunner: ProcessRunning {
     let searchOutput: String?
     func run(_ path: String, _ args: [String]) -> String? {
-        args.contains("search") ? searchOutput : nil
+        if path == "/bin/zsh" { return "/usr/bin/gh" }
+        return args.contains("search") ? searchOutput : nil
     }
 }
 
