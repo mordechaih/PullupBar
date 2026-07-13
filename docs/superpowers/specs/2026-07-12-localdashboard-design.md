@@ -88,9 +88,9 @@ A popover with three sections, stacked in this order:
 2. **Sessions** — "aligned columns" layout: a grid with one row per
    session — status dot | session name | inline bar + percentage | cost —
    columns aligned across all rows.
-3. **Pull requests** — "two-line card" layout: PR number + title on the
-   first line (full width, no truncation-driven layout squeeze), CI dot +
-   draft/review/conflict tags + age on a second line below it.
+3. **Pull requests** — "statusline-style" layout: one line per PR — PR
+   number + truncated title, then inline draft/review/conflict tags, then
+   a CI status dot, with the age pinned to the far right of the row.
 
 A manual refresh control sits in the panel footer in addition to the
 automatic polling described above.
