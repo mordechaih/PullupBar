@@ -1,6 +1,5 @@
 // Sources/PullupBar/Views/BranchesSectionView.swift
 import SwiftUI
-import AppKit
 
 /// The "Branches without a PR" block rendered beneath the open-PR lanes. Owns its header
 /// (title + count + refresh) and its loading / unavailable / empty / list states.

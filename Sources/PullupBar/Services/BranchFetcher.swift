@@ -99,7 +99,7 @@ func fetchBranchesWithoutPR(
 
         for (name, flags) in byName where !branchHasPR(repo: clone.repo, branch: name, runner: runner, ghPath: ghPath) {
             result.append(BranchInfo(
-                id: "\(clone.repo)@\(name)", repo: clone.repo, name: name,
+                id: "\(clone.repo)@\(name)@\(dir)", repo: clone.repo, name: name,
                 localCloneDir: dir, hasLocal: flags.local, hasRemote: flags.remote, tipDate: flags.date
             ))
         }

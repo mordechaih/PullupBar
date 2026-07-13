@@ -118,4 +118,36 @@ final class BranchFetcherTests: XCTestCase {
         // Local ref seeds the map first, so its tipDate (200) is retained via existing?.date ?? ...
         XCTAssertEqual(result?.first?.tipDate, Date(timeIntervalSince1970: 200))
     }
+
+    func testFetchDisambiguatesIdWhenSameRepoInTwoDirs() {
+        var runner = FakeBranchRunner()
+        runner.originByDir = ["/root/a": "git@github.com:o/a.git", "/root/b": "git@github.com:o/a.git"]
+        runner.defaultBranchByDir = ["/root/a": "origin/main", "/root/b": "origin/main"]
+        runner.localRefsByDir = ["/root/a": "feature\t<me@x.com>\t200\n", "/root/b": "feature\t<me@x.com>\t200\n"]
+        runner.remoteRefsByDir = ["/root/a": "", "/root/b": ""]
+
+        let result = fetchBranchesWithoutPR(
+            runner: runner, roots: ["/root"],
+            subdirectories: { _ in ["/root/a", "/root/b"] }
+        )
+
+        XCTAssertEqual(result?.count, 2)
+        let ids = Set(result?.map(\.id) ?? [])
+        XCTAssertEqual(ids.count, 2)  // ids are distinct despite same repo+branch
+    }
+
+    func testFetchExcludesBranchWhenPRListReturnsMalformedJSON() {
+        var runner = FakeBranchRunner()
+        runner.originByDir = ["/root/a": "git@github.com:o/a.git"]
+        runner.defaultBranchByDir = ["/root/a": "origin/main"]
+        runner.localRefsByDir = ["/root/a": "feature\t<me@x.com>\t200\n"]
+        runner.remoteRefsByDir = ["/root/a": ""]
+        runner.prListByHead = ["feature": "not-json"]
+
+        let result = fetchBranchesWithoutPR(
+            runner: runner, roots: ["/root"],
+            subdirectories: { _ in ["/root/a"] }
+        )
+        XCTAssertEqual(result?.count, 0)
+    }
 }
