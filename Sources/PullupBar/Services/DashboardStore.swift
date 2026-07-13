@@ -83,13 +83,10 @@ final class DashboardStore: ObservableObject {
         }
     }
 
-    /// Load branches once (first time the panel appears). Subsequent loads go through refresh.
+    /// Load branches once, on first selection of the No PR tab. Later reloads go through the
+    /// footer refresh (`refreshCurrentFilter`).
     func loadBranchesIfNeeded() {
         guard !branchesLoaded else { return }
-        Task { await refreshBranches() }
-    }
-
-    func refreshBranches_trigger() {
         Task { await refreshBranches() }
     }
 

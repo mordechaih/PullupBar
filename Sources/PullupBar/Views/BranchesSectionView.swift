@@ -1,18 +1,15 @@
-// Sources/PullupBar/Views/BranchesSectionView.swift
 import SwiftUI
 
-/// The "Branches without a PR" block rendered beneath the open-PR lanes. Owns its header
-/// (title + count + refresh) and its loading / unavailable / empty / list states.
+/// The "No PR" tab's content: local/remote branches that never had a PR. Owns its in-page header
+/// (icon + title + count, mirroring the Merged/Closed tabs) and its loading / unavailable / empty
+/// / list states. Refresh is handled by the shared footer button, not a per-tab control.
 struct BranchesSectionView: View {
     let branches: [BranchInfo]
     let loaded: Bool
     let unavailable: Bool
-    let onRefresh: () -> Void
     let onCheckout: (BranchInfo) -> Void
     let onCreatePR: (BranchInfo) -> Void
     let onArchive: (BranchInfo) -> Void
-
-    @State private var refreshBounce = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -31,16 +28,6 @@ struct BranchesSectionView: View {
             if loaded && !unavailable {
                 Text("\(branches.count)").font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Button {
-                refreshBounce += 1
-                onRefresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11))
-                    .bounceOnValueChange(refreshBounce)
-            }
-            .buttonStyle(.plain)
-            .help("Refresh branches")
         }
     }
 
@@ -60,6 +47,9 @@ struct BranchesSectionView: View {
     }
 }
 
+/// A branch row, styled to match `PullRequestChip`: frosted card, top-edge highlight, and a
+/// trailing hover pill (blur scrim + staggered, scaling icon buttons). Archive asks for
+/// confirmation in place before deleting.
 private struct BranchChip: View {
     let branch: BranchInfo
     let onCheckout: (BranchInfo) -> Void
@@ -69,24 +59,34 @@ private struct BranchChip: View {
     @State private var isHovered = false
     @State private var confirmingArchive = false
 
+    private static let hoverSpring: Animation = .spring(response: 0.3, dampingFraction: 0.7)
+
     var body: some View {
+        textContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .trailing) { ChipBlurScrim(isHovered: isHovered) }
+            .overlay(alignment: .trailing) { hoverActions.padding(.trailing, 10) }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .chipTopHighlight()
+            .contentShape(Rectangle())
+            .animation(Self.hoverSpring, value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+                if !hovering { confirmingArchive = false }
+            }
+    }
+
+    private var textContent: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(branch.name)
                 .foregroundColor(.primary)
-                .font(.system(size: 13)).fontWeight(.semibold)
-                .lineLimit(1).truncationMode(.tail)
+                .font(.system(size: 13))
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .truncationMode(.tail)
             metaRow
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(alignment: .trailing) { actions.padding(.trailing, 10) }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-            if !hovering { confirmingArchive = false }
         }
     }
 
@@ -103,38 +103,42 @@ private struct BranchChip: View {
     }
 
     @ViewBuilder
-    private var actions: some View {
+    private var hoverActions: some View {
         if confirmingArchive {
-            HStack(spacing: 8) {
-                Text("Delete branch?").font(.system(size: 12)).foregroundStyle(.secondary)
-                Button { onArchive(branch); confirmingArchive = false } label: {
-                    Image(systemName: "checkmark").foregroundStyle(.red)
-                }.buttonStyle(.plain).help("Confirm delete")
-                Button { confirmingArchive = false } label: {
-                    Image(systemName: "xmark").foregroundStyle(.secondary)
-                }.buttonStyle(.plain).help("Cancel")
+            HStack(spacing: 4) {
+                Text("Delete?").font(.system(size: 12)).foregroundStyle(.secondary)
+                BranchIconButton(systemName: "checkmark", help: "Confirm delete", tint: .red) {
+                    onArchive(branch)
+                    confirmingArchive = false
+                }
+                BranchIconButton(systemName: "xmark", help: "Cancel") {
+                    confirmingArchive = false
+                }
             }
             .padding(.horizontal, 6)
-        } else if isHovered {
+        } else {
+            // Indexed right-to-left so the stagger emanates from the trailing anchor: the
+            // rightmost icon (index 0) pops in first, then cascades left.
             HStack(spacing: 4) {
                 if branch.hasLocal {
-                    iconButton("trash", help: "Archive (delete local branch)") { confirmingArchive = true }
+                    BranchIconButton(systemName: "trash", help: "Archive (delete local branch)") {
+                        confirmingArchive = true
+                    }
+                    .staggeredScale(isActive: isHovered, index: 2)
                 }
-                iconButton("wand.and.stars", help: "Draft a PR with Claude") { onCreatePR(branch) }
-                if branch.hasLocal || branch.hasRemote {
-                    iconButton("arrow.down.circle", help: "Check out this branch locally") { onCheckout(branch) }
+                BranchIconButton(systemName: "wand.and.stars", help: "Draft a PR with Claude") {
+                    onCreatePR(branch)
                 }
+                .staggeredScale(isActive: isHovered, index: 1)
+                BranchIconButton(systemName: "arrow.down.circle", help: "Check out this branch locally") {
+                    onCheckout(branch)
+                }
+                .staggeredScale(isActive: isHovered, index: 0)
             }
             .padding(.horizontal, 6)
+            .scaleEffect(isHovered ? 1 : 0.7, anchor: .trailing)
+            .opacity(isHovered ? 1 : 0)
         }
-    }
-
-    private func iconButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName).font(.system(size: 15))
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     private var repoShortName: String {
@@ -147,9 +151,25 @@ private struct BranchChip: View {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func bounceOnValueChange(_ value: Int) -> some View {
-        if #available(macOS 14.0, *) { self.symbolEffect(.bounce, value: value) } else { self }
+/// An icon button matching the PR-row buttons: tap-bounce feedback plus the shared circular hover
+/// effect. Uses SF Symbols (branch actions have no Octicon equivalents).
+private struct BranchIconButton: View {
+    let systemName: String
+    let help: String
+    var tint: Color = .primary
+    let action: () -> Void
+    @State private var tapTrigger = 0
+
+    var body: some View {
+        Button {
+            tapTrigger += 1
+            action()
+        } label: {
+            Image(systemName: systemName).tapBounce(tapTrigger)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(tint)
+        .iconHoverEffect()
+        .help(help)
     }
 }

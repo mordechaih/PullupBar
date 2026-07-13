@@ -13,7 +13,6 @@ struct PullRequestsSectionView: View {
     let branches: [BranchInfo]
     let branchesLoaded: Bool
     let branchesUnavailable: Bool
-    let onRefreshBranches: () -> Void
     let onCheckoutBranch: (BranchInfo) -> Void
     let onCreatePR: (BranchInfo) -> Void
     let onArchiveBranch: (BranchInfo) -> Void
@@ -144,7 +143,6 @@ struct PullRequestsSectionView: View {
             branches: branches,
             loaded: branchesLoaded,
             unavailable: branchesUnavailable,
-            onRefresh: onRefreshBranches,
             onCheckout: onCheckoutBranch,
             onCreatePR: onCreatePR,
             onArchive: onArchiveBranch
@@ -255,8 +253,6 @@ private struct PullRequestChip: View {
     @State private var isHovered = false
 
     private static let hoverSpring: Animation = .spring(response: 0.3, dampingFraction: 0.7)
-    /// Width of the frosted scrim: covers the 3-icon pill (~112pt) plus a fade region to its left.
-    private static let scrimWidth: CGFloat = 200
 
     var body: some View {
         textContent
@@ -265,21 +261,10 @@ private struct PullRequestChip: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             // Scrim + pill overlay the full card (outside the padding) so the frosted region
             // reaches the card edges; the clip keeps it inside the rounded corners.
-            .overlay(alignment: .trailing) { blurScrim }
+            .overlay(alignment: .trailing) { ChipBlurScrim(isHovered: isHovered) }
             .overlay(alignment: .trailing) { hoverActions.padding(.trailing, 10) }
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            // A hairline highlight along the top edge that fades to transparent toward the bottom.
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [.white.opacity(0.25), .white.opacity(0)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-            )
+            .chipTopHighlight()
             .contentShape(Rectangle())
             .animation(Self.hoverSpring, value: isHovered)
             .onHover { hovering in isHovered = hovering }
@@ -294,30 +279,6 @@ private struct PullRequestChip: View {
             titleText
             metaRow
         }
-    }
-
-    /// A frosted-glass scrim anchored to the trailing edge that sits beneath the hover pill and
-    /// fades out to the left. Material samples and blurs the row text rendered behind it, so the
-    /// text dissolves into a blur behind the icons instead of colliding with them. The gradient
-    /// mask (clear on the left, opaque on the right) is what makes the blur "extend left" of the
-    /// pill and taper away.
-    private var blurScrim: some View {
-        Rectangle()
-            .fill(.ultraThinMaterial)
-            .frame(width: Self.scrimWidth)
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.45)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .allowsHitTesting(false)
-            .opacity(isHovered ? 1 : 0)
     }
 
     private var titleText: some View {
@@ -480,74 +441,5 @@ private struct CopyLinkIconButton: View {
     }
 }
 
-/// A quick pop-and-settle scale pulse fired whenever `trigger` changes — tap feedback for the
-/// custom Octicon shapes, which can't use SF Symbols' `.symbolEffect(.bounce)`.
-private struct TapBounceModifier: ViewModifier {
-    let trigger: Int
-    @State private var scale: CGFloat = 1
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(scale)
-            .onChange(of: trigger) { _ in
-                withAnimation(.spring(response: 0.15, dampingFraction: 0.35)) { scale = 1.35 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.5)) { scale = 1 }
-                }
-            }
-    }
-}
-
-private extension View {
-    func tapBounce(_ trigger: Int) -> some View {
-        modifier(TapBounceModifier(trigger: trigger))
-    }
-}
-
-private struct IconHoverModifier: ViewModifier {
-    @State private var isHovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .font(.system(size: 16))
-            .padding(6)
-            .background(Circle().fill(isHovering ? Color.secondary.opacity(0.18) : Color.clear))
-            .scaleEffect(isHovering ? 1.15 : 1)
-            .onHover { hovering in
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
-                    isHovering = hovering
-                }
-            }
-    }
-}
-
-private extension View {
-    func iconHoverEffect() -> some View {
-        modifier(IconHoverModifier())
-    }
-}
-
-/// Scales an item in from its center with a per-index delay so a row of items pops in on a
-/// stagger. The delay only applies on the way in; on the way out everything collapses together.
-private struct StaggeredScaleModifier: ViewModifier {
-    let isActive: Bool
-    let index: Int
-    private static let perItemDelay: Double = 0.05
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(isActive ? 1 : 0.3)
-            .opacity(isActive ? 1 : 0)
-            .animation(
-                .spring(response: 0.3, dampingFraction: 0.6)
-                    .delay(isActive ? Double(index) * Self.perItemDelay : 0),
-                value: isActive
-            )
-    }
-}
-
-private extension View {
-    func staggeredScale(isActive: Bool, index: Int) -> some View {
-        modifier(StaggeredScaleModifier(isActive: isActive, index: index))
-    }
-}
+// Shared chip helpers (tapBounce, iconHoverEffect, staggeredScale, ChipBlurScrim,
+// chipTopHighlight) live in ChipStyle.swift so PR rows and branch rows share one vocabulary.

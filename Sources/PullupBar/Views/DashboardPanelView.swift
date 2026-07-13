@@ -26,7 +26,6 @@ struct DashboardPanelView: View {
                     branches: store.noPRBranches,
                     branchesLoaded: store.branchesLoaded,
                     branchesUnavailable: store.branchesUnavailable,
-                    onRefreshBranches: { store.refreshBranches_trigger() },
                     onCheckoutBranch: { store.checkoutBranch($0) },
                     onCreatePR: { store.createPRForBranch($0) },
                     onArchiveBranch: { store.archiveBranch($0) }
