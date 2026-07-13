@@ -31,7 +31,8 @@ func resolveGHExecutablePath(
 func fetchPullRequests(runner: ProcessRunning, state: PullRequestFilter = .open, closedLimit: Int = 20) -> [PullRequestInfo]? {
     switch state {
     case .open: return fetchOpenPullRequests(runner: runner)
-    case .closed: return fetchClosedPullRequests(runner: runner, limit: closedLimit)
+    // Merged and closed-unmerged PRs come from the same closed fetch; the view splits them by tab.
+    case .merged, .closed: return fetchClosedPullRequests(runner: runner, limit: closedLimit)
     }
 }
 

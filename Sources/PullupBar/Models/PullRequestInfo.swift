@@ -30,14 +30,19 @@ struct PullRequestInfo: Identifiable, Sendable {
 
 enum PullRequestFilter: String, CaseIterable, Sendable {
     case open
+    case merged
     case closed
 
     var label: String {
         switch self {
         case .open: return "Open"
+        case .merged: return "Merged"
         case .closed: return "Closed"
         }
     }
+
+    /// Whether this tab draws from the closed-PR fetch (merged + closed-unmerged) rather than open PRs.
+    var isClosedTab: Bool { self != .open }
 }
 
 enum PullRequestTriageLane: String, CaseIterable, Sendable {
@@ -65,22 +70,6 @@ func triageLane(for pr: PullRequestInfo) -> PullRequestTriageLane {
         return .readyToMerge
     }
     return .awaitingReview
-}
-
-enum ClosedPullRequestGroup: String, CaseIterable, Sendable {
-    case merged
-    case closed
-
-    var label: String {
-        switch self {
-        case .merged: return "Merged"
-        case .closed: return "Closed"
-        }
-    }
-}
-
-func closedGroup(for pr: PullRequestInfo) -> ClosedPullRequestGroup {
-    pr.isMerged ? .merged : .closed
 }
 
 private struct SearchRepository: Decodable {

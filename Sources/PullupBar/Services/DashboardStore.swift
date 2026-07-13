@@ -62,20 +62,21 @@ final class DashboardStore: ObservableObject {
         }
     }
 
-    /// Switch filters, loading closed PRs on first access to the Closed tab.
+    /// Switch filters, loading closed PRs on first access to either the Merged or Closed tab
+    /// (both are served by the same closed fetch).
     func selectFilter(_ newFilter: PullRequestFilter) {
         filter = newFilter
-        if newFilter == .closed && !closedLoaded {
+        if newFilter.isClosedTab && !closedLoaded {
             Task { await refreshClosedPullRequests() }
         }
     }
 
     /// Refresh whichever list is currently visible. Open PRs also refresh in the
-    /// background poll, so the badge stays current even while viewing Closed.
+    /// background poll, so the badge stays current even while viewing Merged/Closed.
     func refreshCurrentFilter() {
         switch filter {
         case .open: Task { await refreshPullRequests() }
-        case .closed: Task { await refreshClosedPullRequests() }
+        case .merged, .closed: Task { await refreshClosedPullRequests() }
         }
     }
 

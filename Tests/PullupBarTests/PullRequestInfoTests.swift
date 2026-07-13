@@ -163,12 +163,4 @@ final class PullRequestInfoTests: XCTestCase {
         XCTAssertNil(prs[0].closedAt)
         XCTAssertNil(prs[0].closedAgeDays)
     }
-
-    func testClosedGroupMapsMergeState() {
-        var pr = makeTriagePR()
-        pr.isMerged = true
-        XCTAssertEqual(closedGroup(for: pr), .merged)
-        pr.isMerged = false
-        XCTAssertEqual(closedGroup(for: pr), .closed)
-    }
 }

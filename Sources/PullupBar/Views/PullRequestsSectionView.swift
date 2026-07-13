@@ -47,6 +47,7 @@ struct PullRequestsSectionView: View {
     private var pager: some View {
         HStack(alignment: .top, spacing: 0) {
             page(openContent)
+            page(mergedContent)
             page(closedContent)
         }
         .offset(x: -CGFloat(selectedIndex) * Self.pageWidth)
@@ -96,7 +97,13 @@ struct PullRequestsSectionView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private var selectedIndex: Int { filter == .open ? 0 : 1 }
+    private var selectedIndex: Int {
+        switch filter {
+        case .open: return 0
+        case .merged: return 1
+        case .closed: return 2
+        }
+    }
 
     /// One page, fixed to the window's width and height and scrollable within it. Content is
     /// inset at the top so it starts below the header and slides up under it as you scroll.
@@ -127,19 +134,56 @@ struct PullRequestsSectionView: View {
     }
 
     @ViewBuilder
+    private var mergedContent: some View {
+        closedTab(
+            items: closedPullRequests.filter { $0.isMerged },
+            label: "Merged", icon: "arrow.triangle.merge", color: .purple,
+            emptyLabel: "No merged PRs"
+        )
+    }
+
+    @ViewBuilder
     private var closedContent: some View {
+        closedTab(
+            items: closedPullRequests.filter { !$0.isMerged },
+            label: "Closed", icon: "xmark.circle", color: .red,
+            emptyLabel: "No closed PRs"
+        )
+    }
+
+    /// Merged and Closed are their own tabs, each headed by a colored icon + label (the count
+    /// shows once loaded) over a flat, newest-first list of chips. Both share the closed fetch's
+    /// loading/unavailable states. The Open tab keeps its own per-lane headers instead.
+    @ViewBuilder
+    private func closedTab(items: [PullRequestInfo], label: String, icon: String, color: Color, emptyLabel: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(color)
+                Text(label).font(.system(size: 13)).fontWeight(.bold)
+                Spacer()
+                if closedLoaded && !closedUnavailable {
+                    Text("\(items.count)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            closedTabBody(items: items, emptyLabel: emptyLabel)
+        }
+    }
+
+    @ViewBuilder
+    private func closedTabBody(items: [PullRequestInfo], emptyLabel: String) -> some View {
         if !closedLoaded {
             Text("Loading…").foregroundStyle(.secondary)
         } else if closedUnavailable {
             Text("Unavailable").foregroundStyle(.secondary)
-        } else if closedPullRequests.isEmpty {
-            Text("No closed PRs").foregroundStyle(.secondary)
+        } else if items.isEmpty {
+            Text(emptyLabel).foregroundStyle(.secondary)
         } else {
-            ForEach(ClosedPullRequestGroup.allCases, id: \.self) { group in
-                let items = closedPullRequests.filter { closedGroup(for: $0) == group }
-                if !items.isEmpty {
-                    ClosedGroupSectionView(group: group, pullRequests: items, onCheckout: onCheckout)
-                }
+            ForEach(items) { pr in
+                PullRequestChip(pr: pr, onCheckout: onCheckout)
             }
         }
     }
@@ -183,44 +227,6 @@ private struct LaneSectionView: View {
         case .awaitingReview: return "hourglass"
         case .readyToMerge: return "checkmark"
         case .draft: return "pencil"
-        }
-    }
-}
-
-private struct ClosedGroupSectionView: View {
-    let group: ClosedPullRequestGroup
-    let pullRequests: [PullRequestInfo]
-    let onCheckout: (PullRequestInfo) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Image(systemName: groupIcon)
-                    .font(.system(size: 13))
-                    .foregroundStyle(groupColor)
-                Text(group.label).font(.system(size: 13)).fontWeight(.bold)
-                Spacer()
-                Text("\(pullRequests.count)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(pullRequests) { pr in
-                PullRequestChip(pr: pr, onCheckout: onCheckout)
-            }
-        }
-    }
-
-    private var groupColor: Color {
-        switch group {
-        case .merged: return .purple
-        case .closed: return .red
-        }
-    }
-
-    private var groupIcon: String {
-        switch group {
-        case .merged: return "arrow.triangle.merge"
-        case .closed: return "xmark.circle"
         }
     }
 }
