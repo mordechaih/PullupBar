@@ -98,4 +98,24 @@ final class BranchFetcherTests: XCTestCase {
         )
         XCTAssertNil(result)
     }
+
+    func testFetchMergesLocalAndRemoteForSameBranch() {
+        var runner = FakeBranchRunner()
+        runner.originByDir = ["/root/a": "git@github.com:o/a.git"]
+        runner.defaultBranchByDir = ["/root/a": "origin/main"]
+        runner.localRefsByDir = ["/root/a": "shared\t<me@x.com>\t200\n"]
+        runner.remoteRefsByDir = ["/root/a": "shared\t<me@x.com>\t300\n"]
+
+        let result = fetchBranchesWithoutPR(
+            runner: runner, roots: ["/root"],
+            subdirectories: { _ in ["/root/a"] }
+        )
+
+        XCTAssertEqual(result?.count, 1)
+        XCTAssertEqual(result?.first?.name, "shared")
+        XCTAssertEqual(result?.first?.hasLocal, true)
+        XCTAssertEqual(result?.first?.hasRemote, true)
+        // Local ref seeds the map first, so its tipDate (200) is retained via existing?.date ?? ...
+        XCTAssertEqual(result?.first?.tipDate, Date(timeIntervalSince1970: 200))
+    }
 }
