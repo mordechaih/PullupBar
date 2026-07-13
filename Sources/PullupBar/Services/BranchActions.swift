@@ -19,11 +19,17 @@ func archiveBranchLocally(_ branch: BranchInfo, runner: ProcessRunning, gitPath:
     runner.run(gitPath, ["-C", branch.localCloneDir, "branch", "-D", branch.name]) != nil
 }
 
+/// Wraps a string in single quotes for safe embedding in a POSIX shell command, escaping any
+/// embedded single quote as '\'' so branch/dir names can't inject shell code.
+private func shellQuote(_ s: String) -> String {
+    "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
 /// The `.command` script body: enter the clone, check out the branch, then launch Claude Code.
 func prDraftScriptContents(dir: String, branch: String, prompt: String) -> String {
     """
     #!/bin/sh
-    cd "\(dir)" && git checkout "\(branch)" && claude "\(prompt)"
+    cd \(shellQuote(dir)) && git checkout \(shellQuote(branch)) && claude \(shellQuote(prompt))
     """
 }
 

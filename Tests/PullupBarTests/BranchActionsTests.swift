@@ -37,9 +37,15 @@ final class BranchActionsTests: XCTestCase {
 
     func testScriptContentsCdChecksOutAndRunsClaude() {
         let script = prDraftScriptContents(dir: "/clones/r", branch: "feature", prompt: "do it")
-        XCTAssertTrue(script.contains("cd \"/clones/r\""))
-        XCTAssertTrue(script.contains("git checkout \"feature\""))
-        XCTAssertTrue(script.contains("claude \"do it\""))
+        XCTAssertTrue(script.contains("cd '/clones/r'"))
+        XCTAssertTrue(script.contains("git checkout 'feature'"))
+        XCTAssertTrue(script.contains("claude 'do it'"))
+    }
+
+    func testScriptContentsEscapesShellMetacharacters() {
+        let script = prDraftScriptContents(dir: "/clones/r", branch: "x\";touch pwn;echo\"y", prompt: "p")
+        // The whole branch name stays inside single quotes, so `;touch pwn` is literal, not executed.
+        XCTAssertTrue(script.contains("git checkout 'x\";touch pwn;echo\"y'"))
     }
 
     func testLaunchSubstitutesScriptPathAndRunsViaSh() {
