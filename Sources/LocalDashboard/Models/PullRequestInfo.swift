@@ -11,10 +11,76 @@ struct PullRequestInfo: Identifiable, Sendable {
     var ciStatus: String = "PENDING"
     var reviewDecision: String?
     var isConflicting: Bool = false
+    var additions: Int = 0
+    var deletions: Int = 0
+    var changedFiles: Int = 0
+    var isMerged: Bool = false
+    var closedAt: Date? = nil
 
     var ageDays: Int {
         max(0, Int(Date().timeIntervalSince(createdAt) / 86400))
     }
+
+    /// Days since the PR was closed/merged, for the closed view's recency label.
+    /// Nil for open PRs, which have no `closedAt`.
+    var closedAgeDays: Int? {
+        closedAt.map { max(0, Int(Date().timeIntervalSince($0) / 86400)) }
+    }
+}
+
+enum PullRequestFilter: String, CaseIterable, Sendable {
+    case open
+    case closed
+
+    var label: String {
+        switch self {
+        case .open: return "Open"
+        case .closed: return "Closed"
+        }
+    }
+}
+
+enum PullRequestTriageLane: String, CaseIterable, Sendable {
+    case needsAttention
+    case awaitingReview
+    case readyToMerge
+    case draft
+
+    var label: String {
+        switch self {
+        case .needsAttention: return "Needs attention"
+        case .awaitingReview: return "Awaiting review"
+        case .readyToMerge: return "Ready to merge"
+        case .draft: return "Draft"
+        }
+    }
+}
+
+func triageLane(for pr: PullRequestInfo) -> PullRequestTriageLane {
+    if pr.isDraft { return .draft }
+    if pr.ciStatus == "FAILURE" || pr.reviewDecision == "CHANGES_REQUESTED" || pr.isConflicting {
+        return .needsAttention
+    }
+    if pr.ciStatus == "SUCCESS" && pr.reviewDecision == "APPROVED" {
+        return .readyToMerge
+    }
+    return .awaitingReview
+}
+
+enum ClosedPullRequestGroup: String, CaseIterable, Sendable {
+    case merged
+    case closed
+
+    var label: String {
+        switch self {
+        case .merged: return "Merged"
+        case .closed: return "Closed"
+        }
+    }
+}
+
+func closedGroup(for pr: PullRequestInfo) -> ClosedPullRequestGroup {
+    pr.isMerged ? .merged : .closed
 }
 
 private struct SearchRepository: Decodable {
@@ -28,6 +94,7 @@ private struct SearchResultItem: Decodable {
     let isDraft: Bool
     let repository: SearchRepository
     let createdAt: String
+    let closedAt: String?
 }
 
 private let ghDateFormatter: ISO8601DateFormatter = {
@@ -36,7 +103,7 @@ private let ghDateFormatter: ISO8601DateFormatter = {
     return formatter
 }()
 
-func parseSearchResults(_ data: Data) -> [PullRequestInfo] {
+func parseSearchResults(_ data: Data, isMerged: Bool = false) -> [PullRequestInfo] {
     guard let items = try? JSONDecoder().decode([SearchResultItem].self, from: data) else { return [] }
 
     return items.compactMap { item in
@@ -48,7 +115,9 @@ func parseSearchResults(_ data: Data) -> [PullRequestInfo] {
             url: item.url,
             repo: item.repository.nameWithOwner,
             isDraft: item.isDraft,
-            createdAt: created
+            createdAt: created,
+            isMerged: isMerged,
+            closedAt: item.closedAt.flatMap { ghDateFormatter.date(from: $0) }
         )
     }
 }
@@ -62,6 +131,9 @@ private struct DetailResult: Decodable {
     let statusCheckRollup: [CheckRun]?
     let reviewDecision: String?
     let mergeable: String?
+    let additions: Int?
+    let deletions: Int?
+    let changedFiles: Int?
 }
 
 func enrichPullRequest(_ pr: PullRequestInfo, withDetailJSON data: Data) -> PullRequestInfo {
@@ -85,5 +157,8 @@ func enrichPullRequest(_ pr: PullRequestInfo, withDetailJSON data: Data) -> Pull
 
     updated.reviewDecision = (detail.reviewDecision?.isEmpty == false) ? detail.reviewDecision : nil
     updated.isConflicting = detail.mergeable == "CONFLICTING"
+    updated.additions = detail.additions ?? 0
+    updated.deletions = detail.deletions ?? 0
+    updated.changedFiles = detail.changedFiles ?? 0
     return updated
 }

@@ -42,7 +42,7 @@ func renderBadgeIcon(count: Int) -> NSImage {
 
     let scaleFactor = CGFloat(scale)
     let rect = CGRect(x: 0, y: 0, width: pixelSize, height: pixelSize)
-    let path = CGPath(roundedRect: rect, cornerWidth: 5 * scaleFactor, cornerHeight: 5 * scaleFactor, transform: nil)
+    let path = CGPath(ellipseIn: rect, transform: nil)
     ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     ctx.addPath(path)
     ctx.fillPath()

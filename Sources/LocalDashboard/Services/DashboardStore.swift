@@ -2,59 +2,27 @@ import Foundation
 
 @MainActor
 final class DashboardStore: ObservableObject {
-    @Published var sessionRows: [SessionRow] = []
-    @Published var usage: UsageWindowInfo?
-    @Published var usageUnavailable = false
     @Published var pullRequests: [PullRequestInfo] = []
     @Published var prsUnavailable = false
+    @Published var filter: PullRequestFilter = .open
+    @Published var closedPullRequests: [PullRequestInfo] = []
+    @Published var closedUnavailable = false
+    @Published var closedLoaded = false
 
-    private let sessionsDir: String
-    private let projectsDir: String
-    private let tokenProvider: KeychainTokenProviding
     private let processRunner: ProcessRunning
-    private let dataTask: DataTaskFunc
+    private var refreshTimer: Timer?
 
-    private var sessionTimer: Timer?
-    private var apiTimer: Timer?
-
+    /// The badge always reflects open PRs, regardless of which filter is being viewed.
     var badgeCount: Int { pullRequests.count }
 
-    init(
-        sessionsDir: String = NSString(string: "~/.claude/sessions").expandingTildeInPath,
-        projectsDir: String = NSString(string: "~/.claude/projects").expandingTildeInPath,
-        tokenProvider: KeychainTokenProviding = KeychainTokenProvider(),
-        processRunner: ProcessRunning = SystemProcessRunner(),
-        dataTask: @escaping DataTaskFunc = URLSession.shared.data(for:)
-    ) {
-        self.sessionsDir = sessionsDir
-        self.projectsDir = projectsDir
-        self.tokenProvider = tokenProvider
+    init(processRunner: ProcessRunning = SystemProcessRunner()) {
         self.processRunner = processRunner
-        self.dataTask = dataTask
-    }
-
-    func refreshSessions() async {
-        let dir1 = sessionsDir
-        let dir2 = projectsDir
-        let rows = await Task.detached(priority: .utility) { () -> [SessionRow] in
-            computeSessionRows(sessionsDir: dir1, projectsDir: dir2)
-        }.value
-        sessionRows = rows
-    }
-
-    func refreshUsage() async {
-        if let result = await fetchUsageWindow(tokenProvider: tokenProvider, dataTask: dataTask) {
-            usage = result
-            usageUnavailable = false
-        } else {
-            usageUnavailable = true
-        }
     }
 
     func refreshPullRequests() async {
         let runner = processRunner
         let result = await Task.detached(priority: .utility) { () -> [PullRequestInfo]? in
-            fetchPullRequests(runner: runner)
+            fetchPullRequests(runner: runner, state: .open)
         }.value
 
         if let result {
@@ -65,23 +33,54 @@ final class DashboardStore: ObservableObject {
         }
     }
 
+    func refreshClosedPullRequests() async {
+        let runner = processRunner
+        let result = await Task.detached(priority: .utility) { () -> [PullRequestInfo]? in
+            fetchPullRequests(runner: runner, state: .closed)
+        }.value
+
+        closedLoaded = true
+        if let result {
+            closedPullRequests = result
+            closedUnavailable = false
+        } else {
+            closedUnavailable = true
+        }
+    }
+
+    /// Switch filters, loading closed PRs on first access to the Closed tab.
+    func selectFilter(_ newFilter: PullRequestFilter) {
+        filter = newFilter
+        if newFilter == .closed && !closedLoaded {
+            Task { await refreshClosedPullRequests() }
+        }
+    }
+
+    /// Refresh whichever list is currently visible. Open PRs also refresh in the
+    /// background poll, so the badge stays current even while viewing Closed.
+    func refreshCurrentFilter() {
+        switch filter {
+        case .open: Task { await refreshPullRequests() }
+        case .closed: Task { await refreshClosedPullRequests() }
+        }
+    }
+
+    func checkoutPullRequest(_ pr: PullRequestInfo) {
+        let runner = processRunner
+        Task.detached(priority: .utility) {
+            checkoutPullRequestBranch(repo: pr.repo, number: pr.number, runner: runner)
+        }
+    }
+
     func refreshAll() {
-        Task { await refreshSessions() }
-        Task { await refreshUsage() }
         Task { await refreshPullRequests() }
     }
 
     func startPolling() {
-        guard sessionTimer == nil else { return }
+        guard refreshTimer == nil else { return }
         refreshAll()
-        sessionTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refreshSessions() }
-        }
-        apiTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.refreshUsage()
-                await self?.refreshPullRequests()
-            }
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.refreshPullRequests() }
         }
     }
 }
