@@ -17,6 +17,7 @@ struct SettingsView: View {
                 repoFoldersSection
                 refreshIntervalSection
                 closedCountSection
+                createPRCommandSection
             }
             .padding(16)
             .frame(width: Self.width, alignment: .leading)
@@ -95,6 +96,19 @@ struct SettingsView: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
+        }
+    }
+
+    private var createPRCommandSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Create-PR terminal command").font(.system(size: 13, weight: .bold))
+            Text("Runs when you click Create PR on a branch. {script} is replaced with a generated script that cds into the clone, checks out the branch, and launches Claude Code.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("open {script}", text: $settings.createPRCommand)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
         }
     }
 
