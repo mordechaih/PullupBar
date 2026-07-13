@@ -19,17 +19,32 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(closedPRLimit, forKey: Keys.closedPRLimit) }
     }
 
+    /// Shell command run to open a terminal for a Claude session (Create PR, and checkout when
+    /// `openClaudeOnCheckout` is on). `{script}` is replaced with the path to a generated
+    /// `.command` script.
+    @Published var createPRCommand: String {
+        didSet { defaults.set(createPRCommand, forKey: Keys.createPRCommand) }
+    }
+
+    /// When true, checking out a PR or branch also opens a Claude Code session in the clone folder.
+    @Published var openClaudeOnCheckout: Bool {
+        didSet { defaults.set(openClaudeOnCheckout, forKey: Keys.openClaudeOnCheckout) }
+    }
+
     private let defaults: UserDefaults
 
     private enum Keys {
         static let repoSearchRoots = "repoSearchRoots"
         static let pollIntervalSeconds = "pollIntervalSeconds"
         static let closedPRLimit = "closedPRLimit"
+        static let createPRCommand = "createPRCommand"
+        static let openClaudeOnCheckout = "openClaudeOnCheckout"
     }
 
     static let defaultRepoSearchRoot = NSString(string: "~/Documents/GitHub").expandingTildeInPath
     static let defaultPollIntervalSeconds = 60
     static let defaultClosedPRLimit = 20
+    static let defaultCreatePRCommand = "open {script}"
 
     static let pollIntervalOptions = [30, 60, 120, 300]
     static let closedPRLimitOptions = [10, 20, 50, 100]
@@ -41,6 +56,9 @@ final class SettingsStore: ObservableObject {
         self.pollIntervalSeconds = storedInterval > 0 ? storedInterval : Self.defaultPollIntervalSeconds
         let storedLimit = defaults.integer(forKey: Keys.closedPRLimit)
         self.closedPRLimit = storedLimit > 0 ? storedLimit : Self.defaultClosedPRLimit
+        let storedCommand = defaults.string(forKey: Keys.createPRCommand)
+        self.createPRCommand = (storedCommand?.isEmpty == false) ? storedCommand! : Self.defaultCreatePRCommand
+        self.openClaudeOnCheckout = defaults.bool(forKey: Keys.openClaudeOnCheckout)
     }
 
     /// Adds folders, skipping any already present (order preserved).

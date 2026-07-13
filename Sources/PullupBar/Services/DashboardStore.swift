@@ -9,6 +9,9 @@ final class DashboardStore: ObservableObject {
     @Published var closedPullRequests: [PullRequestInfo] = []
     @Published var closedUnavailable = false
     @Published var closedLoaded = false
+    @Published var noPRBranches: [BranchInfo] = []
+    @Published var branchesUnavailable = false
+    @Published var branchesLoaded = false
 
     let settings: SettingsStore
 
@@ -62,12 +65,66 @@ final class DashboardStore: ObservableObject {
         }
     }
 
-    /// Switch filters, loading closed PRs on first access to either the Merged or Closed tab
-    /// (both are served by the same closed fetch).
+    /// Fetch branches without a PR. Decoupled from the poll timer — called on first panel
+    /// appearance and on explicit refresh only.
+    func refreshBranches() async {
+        let runner = processRunner
+        let roots = settings.repoSearchRoots
+        let result = await Task.detached(priority: .utility) { () -> [BranchInfo]? in
+            fetchBranchesWithoutPR(runner: runner, roots: roots)
+        }.value
+
+        branchesLoaded = true
+        if let result {
+            noPRBranches = result
+            branchesUnavailable = false
+        } else {
+            branchesUnavailable = true
+        }
+    }
+
+    /// Load branches once, on first selection of the No PR tab. Later reloads go through the
+    /// footer refresh (`refreshCurrentFilter`).
+    func loadBranchesIfNeeded() {
+        guard !branchesLoaded else { return }
+        Task { await refreshBranches() }
+    }
+
+    func checkoutBranch(_ branch: BranchInfo) {
+        let runner = processRunner
+        let openClaude = settings.openClaudeOnCheckout
+        let command = settings.createPRCommand
+        Task.detached(priority: .utility) {
+            checkoutBranchLocally(branch, runner: runner)
+            if openClaude {
+                launchClaudeSession(dir: branch.localCloneDir, command: command, runner: runner)
+            }
+        }
+    }
+
+    /// Delete the local branch, then drop it from the list so the row disappears without a reload.
+    func archiveBranch(_ branch: BranchInfo) {
+        let runner = processRunner
+        Task {
+            let ok = await Task.detached(priority: .utility) { archiveBranchLocally(branch, runner: runner) }.value
+            if ok { noPRBranches.removeAll { $0.id == branch.id } }
+        }
+    }
+
+    func createPRForBranch(_ branch: BranchInfo) {
+        let runner = processRunner
+        let command = settings.createPRCommand
+        Task.detached(priority: .utility) { launchPRDraftSession(branch, command: command, runner: runner) }
+    }
+
+    /// Switch filters, loading each tab's data on first access: closed PRs for Merged/Closed
+    /// (both served by the same closed fetch), branches for the No PR tab.
     func selectFilter(_ newFilter: PullRequestFilter) {
         filter = newFilter
         if newFilter.isClosedTab && !closedLoaded {
             Task { await refreshClosedPullRequests() }
+        } else if newFilter == .noPR {
+            loadBranchesIfNeeded()
         }
     }
 
@@ -77,14 +134,20 @@ final class DashboardStore: ObservableObject {
         switch filter {
         case .open: Task { await refreshPullRequests() }
         case .merged, .closed: Task { await refreshClosedPullRequests() }
+        case .noPR: Task { await refreshBranches() }
         }
     }
 
     func checkoutPullRequest(_ pr: PullRequestInfo) {
         let runner = processRunner
         let roots = settings.repoSearchRoots
+        let openClaude = settings.openClaudeOnCheckout
+        let command = settings.createPRCommand
         Task.detached(priority: .utility) {
             checkoutPullRequestBranch(repo: pr.repo, number: pr.number, runner: runner, searchRoots: roots)
+            if openClaude, let dir = localRepoDirectory(forRepo: pr.repo, searchRoots: roots) {
+                launchClaudeSession(dir: dir, command: command, runner: runner)
+            }
         }
     }
 

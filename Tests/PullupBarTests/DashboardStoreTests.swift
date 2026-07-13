@@ -29,6 +29,22 @@ private func prJSON(_ number: Int, closedAt: String? = nil) -> String {
     return "{\"number\":\(number),\"title\":\"t\",\"url\":\"https://x/\(number)\",\"isDraft\":false,\"repository\":{\"nameWithOwner\":\"o/r\"},\"createdAt\":\"2026-06-01T12:00:00Z\"\(closed)}"
 }
 
+/// Answers git/gh calls from canned tables, matching on the git subcommand rather than the
+/// (dynamic, temp-dir) `-C` argument. Mirrors `FakeBranchRunner` from BranchFetcherTests.
+private struct BranchStoreFakeRunner: ProcessRunning {
+    func run(_ path: String, _ args: [String]) -> String? {
+        if args == ["-l", "-c", "command -v gh"] { return "/usr/bin/gh" }
+        if args == ["config", "--get", "user.email"] { return "me@x.com" }
+        if args.contains("remote") { return "git@github.com:o/a.git" }
+        if args.contains("symbolic-ref") { return "origin/main" }
+        if args.contains("for-each-ref") {
+            return args.contains("refs/heads") ? "feature\t<me@x.com>\t200\n" : ""
+        }
+        if args.first == "pr", args.contains("list") { return "[]" }
+        return nil
+    }
+}
+
 final class DashboardStoreTests: XCTestCase {
     @MainActor
     func testRefreshPullRequestsSetsBadgeCount() async {
@@ -101,5 +117,42 @@ final class DashboardStoreTests: XCTestCase {
 
         XCTAssertTrue(store.closedLoaded)
         XCTAssertTrue(store.closedUnavailable)
+    }
+
+    @MainActor
+    func testRefreshBranchesPopulatesAndMarksLoaded() async {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pullupbar-branches-\(UUID().uuidString)")
+        let cloneGitDir = root.appendingPathComponent("a").appendingPathComponent(".git")
+        try! fm.createDirectory(at: cloneGitDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let settings = SettingsStore(defaults: UserDefaults(suiteName: "s-\(UUID().uuidString)")!)
+        settings.repoSearchRoots = [root.path]
+        let store = DashboardStore(processRunner: BranchStoreFakeRunner(), settings: settings)
+
+        await store.refreshBranches()
+
+        XCTAssertTrue(store.branchesLoaded)
+        XCTAssertFalse(store.branchesUnavailable)
+        XCTAssertEqual(store.noPRBranches.map(\.name), ["feature"])
+    }
+
+    func testCreatePRCommandDefaultsAndPersists() {
+        let defaults = UserDefaults(suiteName: "createpr-\(UUID().uuidString)")!
+        let a = SettingsStore(defaults: defaults)
+        XCTAssertEqual(a.createPRCommand, SettingsStore.defaultCreatePRCommand)
+        a.createPRCommand = "open -a iTerm {script}"
+        let b = SettingsStore(defaults: defaults)
+        XCTAssertEqual(b.createPRCommand, "open -a iTerm {script}")
+    }
+
+    func testOpenClaudeOnCheckoutDefaultsFalseAndPersists() {
+        let defaults = UserDefaults(suiteName: "claudecheckout-\(UUID().uuidString)")!
+        let a = SettingsStore(defaults: defaults)
+        XCTAssertFalse(a.openClaudeOnCheckout)
+        a.openClaudeOnCheckout = true
+        let b = SettingsStore(defaults: defaults)
+        XCTAssertTrue(b.openClaudeOnCheckout)
     }
 }

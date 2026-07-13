@@ -17,6 +17,8 @@ struct SettingsView: View {
                 repoFoldersSection
                 refreshIntervalSection
                 closedCountSection
+                openClaudeOnCheckoutSection
+                terminalCommandSection
             }
             .padding(16)
             .frame(width: Self.width, alignment: .leading)
@@ -95,6 +97,31 @@ struct SettingsView: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
+        }
+    }
+
+    private var openClaudeOnCheckoutSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $settings.openClaudeOnCheckout) {
+                Text("Open Claude on checkout").font(.system(size: 13, weight: .bold))
+            }
+            Text("After checking out a PR or branch, also open a Claude Code session in the clone folder, using the terminal command below.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var terminalCommandSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Terminal command").font(.system(size: 13, weight: .bold))
+            Text("Opens the Claude Code sessions launched by Create PR and by \u{201C}Open Claude on checkout\u{201D}. {script} is replaced with a generated script that cds into the clone and launches Claude Code.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("open {script}", text: $settings.createPRCommand)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
         }
     }
 

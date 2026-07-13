@@ -33,6 +33,8 @@ func fetchPullRequests(runner: ProcessRunning, state: PullRequestFilter = .open,
     case .open: return fetchOpenPullRequests(runner: runner)
     // Merged and closed-unmerged PRs come from the same closed fetch; the view splits them by tab.
     case .merged, .closed: return fetchClosedPullRequests(runner: runner, limit: closedLimit)
+    // The No PR tab uses fetchBranchesWithoutPR, not this PR fetch; never reached in practice.
+    case .noPR: return nil
     }
 }
 
