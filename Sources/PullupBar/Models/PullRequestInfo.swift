@@ -28,21 +28,26 @@ struct PullRequestInfo: Identifiable, Sendable {
     }
 }
 
+/// Selects which tab of the dashboard's segmented switcher is showing. Open/merged/closed draw
+/// from pull-request fetches; `noPR` shows local/remote branches that never had a PR.
 enum PullRequestFilter: String, CaseIterable, Sendable {
     case open
     case merged
     case closed
+    case noPR
 
     var label: String {
         switch self {
         case .open: return "Open"
         case .merged: return "Merged"
         case .closed: return "Closed"
+        case .noPR: return "No PR"
         }
     }
 
-    /// Whether this tab draws from the closed-PR fetch (merged + closed-unmerged) rather than open PRs.
-    var isClosedTab: Bool { self != .open }
+    /// Whether this tab draws from the closed-PR fetch (merged + closed-unmerged) rather than open
+    /// PRs. The `noPR` tab draws from its own branch fetch, so it is not a closed tab.
+    var isClosedTab: Bool { self == .merged || self == .closed }
 }
 
 enum PullRequestTriageLane: String, CaseIterable, Sendable {

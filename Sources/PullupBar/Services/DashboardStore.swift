@@ -113,12 +113,14 @@ final class DashboardStore: ObservableObject {
         Task.detached(priority: .utility) { launchPRDraftSession(branch, command: command, runner: runner) }
     }
 
-    /// Switch filters, loading closed PRs on first access to either the Merged or Closed tab
-    /// (both are served by the same closed fetch).
+    /// Switch filters, loading each tab's data on first access: closed PRs for Merged/Closed
+    /// (both served by the same closed fetch), branches for the No PR tab.
     func selectFilter(_ newFilter: PullRequestFilter) {
         filter = newFilter
         if newFilter.isClosedTab && !closedLoaded {
             Task { await refreshClosedPullRequests() }
+        } else if newFilter == .noPR {
+            loadBranchesIfNeeded()
         }
     }
 
@@ -128,6 +130,7 @@ final class DashboardStore: ObservableObject {
         switch filter {
         case .open: Task { await refreshPullRequests() }
         case .merged, .closed: Task { await refreshClosedPullRequests() }
+        case .noPR: Task { await refreshBranches() }
         }
     }
 

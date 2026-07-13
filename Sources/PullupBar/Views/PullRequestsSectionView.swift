@@ -25,8 +25,8 @@ struct PullRequestsSectionView: View {
     private static let pagePadding: CGFloat = 16
     private static let slide: Animation = .spring(response: 0.4, dampingFraction: 0.85)
 
-    /// The header sits on top of the scroll content: `headerHeight` is the solid band the title
-    /// and picker occupy; `headerFade` is the extra region below it where the frosted backdrop
+    /// The header sits on top of the scroll content: `headerHeight` is the solid band the tab
+    /// picker occupies; `headerFade` is the extra region below it where the frosted backdrop
     /// tapers to clear. Scroll content is inset by their sum so, at rest, the first row sits just
     /// below the fade and only blurs as it scrolls up under the header.
     private static let headerHeight: CGFloat = 44
@@ -47,15 +47,16 @@ struct PullRequestsSectionView: View {
         .frame(width: Self.pageWidth, height: fixedHeight)
     }
 
-    /// The two views sit side by side in a row twice as wide as the window; a single horizontal
-    /// offset slides the outgoing view off one edge while the incoming view arrives from the
-    /// other, so there's one continuous motion with a clear spatial relationship. Height is
-    /// fixed, so the toggle never resizes the window.
+    /// The four tab views sit side by side in a row four windows wide; a single horizontal offset
+    /// slides the outgoing view off one edge while the incoming view arrives from the other, so
+    /// there's one continuous motion with a clear spatial relationship. Height is fixed, so the
+    /// toggle never resizes the window.
     private var pager: some View {
         HStack(alignment: .top, spacing: 0) {
             page(openContent)
             page(mergedContent)
             page(closedContent)
+            page(noPRContent)
         }
         .offset(x: -CGFloat(selectedIndex) * Self.pageWidth)
         .frame(width: Self.pageWidth, height: fixedHeight, alignment: .topLeading)
@@ -87,18 +88,14 @@ struct PullRequestsSectionView: View {
     }
 
     private var headerContent: some View {
-        HStack {
-            Text("Pull Requests").font(.headline)
-            Spacer()
-            Picker("", selection: $filter) {
-                ForEach(PullRequestFilter.allCases, id: \.self) { option in
-                    Text(option.label).tag(option)
-                }
+        Picker("", selection: $filter) {
+            ForEach(PullRequestFilter.allCases, id: \.self) { option in
+                Text(option.label).tag(option)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
         .padding(.horizontal, Self.pagePadding)
         .frame(width: Self.pageWidth, height: Self.headerHeight)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -109,6 +106,7 @@ struct PullRequestsSectionView: View {
         case .open: return 0
         case .merged: return 1
         case .closed: return 2
+        case .noPR: return 3
         }
     }
 
@@ -126,29 +124,31 @@ struct PullRequestsSectionView: View {
 
     @ViewBuilder
     private var openContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if unavailable {
-                Text("Unavailable").foregroundStyle(.secondary)
-            } else if pullRequests.isEmpty {
-                Text("No open PRs").foregroundStyle(.secondary)
-            } else {
-                ForEach(PullRequestTriageLane.allCases, id: \.self) { lane in
-                    let items = pullRequests.filter { triageLane(for: $0) == lane }
-                    if !items.isEmpty {
-                        LaneSectionView(lane: lane, pullRequests: items, onCheckout: onCheckout)
-                    }
+        if unavailable {
+            Text("Unavailable").foregroundStyle(.secondary)
+        } else if pullRequests.isEmpty {
+            Text("No open PRs").foregroundStyle(.secondary)
+        } else {
+            ForEach(PullRequestTriageLane.allCases, id: \.self) { lane in
+                let items = pullRequests.filter { triageLane(for: $0) == lane }
+                if !items.isEmpty {
+                    LaneSectionView(lane: lane, pullRequests: items, onCheckout: onCheckout)
                 }
             }
-            BranchesSectionView(
-                branches: branches,
-                loaded: branchesLoaded,
-                unavailable: branchesUnavailable,
-                onRefresh: onRefreshBranches,
-                onCheckout: onCheckoutBranch,
-                onCreatePR: onCreatePR,
-                onArchive: onArchiveBranch
-            )
         }
+    }
+
+    /// The No PR tab: local/remote branches that never had a PR. Loaded lazily on first selection.
+    private var noPRContent: some View {
+        BranchesSectionView(
+            branches: branches,
+            loaded: branchesLoaded,
+            unavailable: branchesUnavailable,
+            onRefresh: onRefreshBranches,
+            onCheckout: onCheckoutBranch,
+            onCreatePR: onCreatePR,
+            onArchive: onArchiveBranch
+        )
     }
 
     @ViewBuilder

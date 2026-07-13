@@ -36,7 +36,6 @@ struct DashboardPanelView: View {
             footer
         }
         .frame(width: 380)
-        .onAppear { store.loadBranchesIfNeeded() }
     }
 
     private var footer: some View {
