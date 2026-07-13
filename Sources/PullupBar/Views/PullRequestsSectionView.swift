@@ -10,6 +10,13 @@ struct PullRequestsSectionView: View {
     @Binding var filter: PullRequestFilter
     let maxContentHeight: CGFloat
     let onCheckout: (PullRequestInfo) -> Void
+    let branches: [BranchInfo]
+    let branchesLoaded: Bool
+    let branchesUnavailable: Bool
+    let onRefreshBranches: () -> Void
+    let onCheckoutBranch: (BranchInfo) -> Void
+    let onCreatePR: (BranchInfo) -> Void
+    let onArchiveBranch: (BranchInfo) -> Void
 
     /// One page spans the full window width; the 16pt horizontal breathing room lives *inside*
     /// each page (see `page`) so the clip sits at the window edge and the spring overshoot slides
@@ -119,17 +126,28 @@ struct PullRequestsSectionView: View {
 
     @ViewBuilder
     private var openContent: some View {
-        if unavailable {
-            Text("Unavailable").foregroundStyle(.secondary)
-        } else if pullRequests.isEmpty {
-            Text("No open PRs").foregroundStyle(.secondary)
-        } else {
-            ForEach(PullRequestTriageLane.allCases, id: \.self) { lane in
-                let items = pullRequests.filter { triageLane(for: $0) == lane }
-                if !items.isEmpty {
-                    LaneSectionView(lane: lane, pullRequests: items, onCheckout: onCheckout)
+        VStack(alignment: .leading, spacing: 14) {
+            if unavailable {
+                Text("Unavailable").foregroundStyle(.secondary)
+            } else if pullRequests.isEmpty {
+                Text("No open PRs").foregroundStyle(.secondary)
+            } else {
+                ForEach(PullRequestTriageLane.allCases, id: \.self) { lane in
+                    let items = pullRequests.filter { triageLane(for: $0) == lane }
+                    if !items.isEmpty {
+                        LaneSectionView(lane: lane, pullRequests: items, onCheckout: onCheckout)
+                    }
                 }
             }
+            BranchesSectionView(
+                branches: branches,
+                loaded: branchesLoaded,
+                unavailable: branchesUnavailable,
+                onRefresh: onRefreshBranches,
+                onCheckout: onCheckoutBranch,
+                onCreatePR: onCreatePR,
+                onArchive: onArchiveBranch
+            )
         }
     }
 

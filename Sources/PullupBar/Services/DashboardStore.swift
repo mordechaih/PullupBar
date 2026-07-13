@@ -89,6 +89,10 @@ final class DashboardStore: ObservableObject {
         Task { await refreshBranches() }
     }
 
+    func refreshBranches_trigger() {
+        Task { await refreshBranches() }
+    }
+
     func checkoutBranch(_ branch: BranchInfo) {
         let runner = processRunner
         Task.detached(priority: .utility) { checkoutBranchLocally(branch, runner: runner) }

@@ -22,13 +22,21 @@ struct DashboardPanelView: View {
                         set: { store.selectFilter($0) }
                     ),
                     maxContentHeight: maxContentHeight,
-                    onCheckout: { store.checkoutPullRequest($0) }
+                    onCheckout: { store.checkoutPullRequest($0) },
+                    branches: store.noPRBranches,
+                    branchesLoaded: store.branchesLoaded,
+                    branchesUnavailable: store.branchesUnavailable,
+                    onRefreshBranches: { store.refreshBranches_trigger() },
+                    onCheckoutBranch: { store.checkoutBranch($0) },
+                    onCreatePR: { store.createPRForBranch($0) },
+                    onArchiveBranch: { store.archiveBranch($0) }
                 )
             }
             Divider()
             footer
         }
         .frame(width: 380)
+        .onAppear { store.loadBranchesIfNeeded() }
     }
 
     private var footer: some View {
