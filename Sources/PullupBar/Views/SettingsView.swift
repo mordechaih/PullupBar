@@ -39,19 +39,31 @@ struct SettingsView: View {
                 Text("No folders added — checkout is disabled until you add one.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-                ForEach(settings.repoSearchRoots, id: \.self) { root in
-                    folderRow(root)
-                }
             }
 
-            Button(action: addFolders) {
-                Label("Add folder…", systemImage: "plus")
-                    .font(.system(size: 12))
-            }
-            .buttonStyle(.borderless)
-            .padding(.top, 2)
+            folderList
         }
+    }
+
+    /// The folder rows and the "Add folder" button rendered as a single grouped list: rows sit flush
+    /// against each other, separated by hairline dividers, with only the group's outer corners rounded.
+    private var folderList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(settings.repoSearchRoots.enumerated()), id: \.element) { index, root in
+                if index > 0 { rowDivider }
+                folderRow(root)
+            }
+            if !settings.repoSearchRoots.isEmpty { rowDivider }
+            addFolderRow
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.1))
+            .frame(height: 1)
     }
 
     private func folderRow(_ root: String) -> some View {
@@ -72,7 +84,19 @@ struct SettingsView: View {
             .help("Remove folder")
         }
         .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var addFolderRow: some View {
+        Button(action: addFolders) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus").foregroundStyle(.secondary)
+                Text("Add folder…").font(.system(size: 12))
+                Spacer()
+            }
+            .padding(8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var refreshIntervalSection: some View {
