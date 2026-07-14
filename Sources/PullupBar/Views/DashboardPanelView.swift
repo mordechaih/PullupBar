@@ -3,7 +3,7 @@ import AppKit
 
 struct DashboardPanelView: View {
     @ObservedObject var store: DashboardStore
-    @State private var refreshBounce = 0
+    @State private var refreshRotate = 0
     @State private var showingSettings = false
 
     var body: some View {
@@ -49,11 +49,11 @@ struct DashboardPanelView: View {
 
             if !showingSettings {
                 Button {
-                    refreshBounce += 1
+                    refreshRotate += 1
                     store.refreshCurrentFilter()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .bounceOnValueChange(refreshBounce)
+                        .rotateOnValueChange(refreshRotate)
                 }
                 .buttonStyle(.plain)
                 .help("Refresh")
@@ -83,8 +83,10 @@ struct DashboardPanelView: View {
 
 private extension View {
     @ViewBuilder
-    func bounceOnValueChange(_ value: Int) -> some View {
-        if #available(macOS 14.0, *) {
+    func rotateOnValueChange(_ value: Int) -> some View {
+        if #available(macOS 15.0, *) {
+            self.symbolEffect(.rotate, value: value)
+        } else if #available(macOS 14.0, *) {
             self.symbolEffect(.bounce, value: value)
         } else {
             self
