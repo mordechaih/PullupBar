@@ -1,8 +1,22 @@
 import SwiftUI
+import AppKit
 
 /// Shared visual + interaction vocabulary for the row "chips" across every tab (PR rows and
 /// branch rows). Extracted so both `PullRequestChip` and `BranchChip` share one hover/animation
 /// language instead of each rolling its own.
+
+extension Color {
+    /// Static stand-in for the frosted `.ultraThinMaterial` card backing. A backdrop-sampling
+    /// material washes out while the pager slides between tabs (it can't sample the window backdrop
+    /// mid-animation), so the card uses a plain appearance-adaptive fill instead: a light veil in
+    /// light mode, a light-lifting veil in dark mode, both close to the material's resting look.
+    static let chipBacking = Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.10)
+            : NSColor(white: 1, alpha: 0.55)
+    })
+}
 
 /// A frosted-glass scrim anchored to the trailing edge that sits beneath the hover pill and fades
 /// out to the left. Material samples and blurs the row text behind it, so the text dissolves into
@@ -63,7 +77,12 @@ struct ChipGroup<Data: RandomAccessCollection, Row: View>: View where Data.Eleme
                 row(element)
             }
         }
-        .background(.ultraThinMaterial)
+        // Solid fill rather than `.ultraThinMaterial`: a backdrop-sampling material loses its
+        // window backdrop while the pager is offset-animated during a tab slide and washes out to
+        // a flat light fill for the length of the animation — a flicker at the panel edges. A plain
+        // color samples nothing, so it stays put through the slide. (The hover scrim still uses a
+        // material: it only animates opacity, not an offset, and flattens itself — see ChipBlurScrim.)
+        .background(Color.chipBacking)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .chipTopHighlight()
     }
