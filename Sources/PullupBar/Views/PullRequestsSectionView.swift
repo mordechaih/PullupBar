@@ -68,8 +68,7 @@ struct PullRequestsSectionView: View {
     /// hitting a hard clip line.
     private var headerBlur: some View {
         let total = Self.headerHeight + Self.headerFade
-        return Rectangle()
-            .fill(.ultraThinMaterial)
+        return HeaderVisualEffectBlur()
             .frame(width: Self.pageWidth, height: total)
             .mask(
                 LinearGradient(
@@ -246,6 +245,28 @@ private struct LaneSectionView: View {
         case .readyToMerge: return "checkmark"
         case .draft: return "pencil"
         }
+    }
+}
+
+/// The pinned header backdrop, drawn as a plain AppKit `NSVisualEffectView` rather than SwiftUI's
+/// `.ultraThinMaterial`. A SwiftUI backdrop-sampling material re-samples its backdrop on every
+/// window recomposite and momentarily drops it to a flat wash — during a row's hover spring the
+/// window recomposites every frame, so the header blur flickers. A within-window visual-effect view
+/// blurs the same content without that wash-out, holding steady while rows animate beneath it.
+/// (The tab-slide edge flicker was the same family — see `ChipGroup` — but there the material was
+/// offset-animated, so it was swapped for a non-sampling solid; here the header must keep a real
+/// blur to obscure rows scrolling under it, so it stays a visual-effect view.)
+private struct HeaderVisualEffectBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.state = .active
     }
 }
 
