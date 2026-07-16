@@ -17,12 +17,20 @@ private struct FakeGHRunner: ProcessRunning {
 
 /// Records the argument lists of every `gh search` invocation so tests can assert on flags.
 private final class SearchCapturingRunner: ProcessRunning, @unchecked Sendable {
-    private(set) var searchArgs: [[String]] = []
+    private let lock = NSLock()
+    private var _searchArgs: [[String]] = []
+    // The two closed-PR searches run concurrently, so guard the recording with a lock.
+    var searchArgs: [[String]] {
+        lock.lock(); defer { lock.unlock() }
+        return _searchArgs
+    }
 
     func run(_ path: String, _ args: [String]) -> String? {
         if args == ["-l", "-c", "command -v gh"] { return "/usr/bin/gh" }
         if args.contains("search") {
-            searchArgs.append(args)
+            lock.lock()
+            _searchArgs.append(args)
+            lock.unlock()
             return "[]"
         }
         return nil

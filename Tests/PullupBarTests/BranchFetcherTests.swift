@@ -8,7 +8,7 @@ private struct FakeBranchRunner: ProcessRunning {
     var defaultBranchByDir: [String: String] = [:] // dir -> "origin/main"
     var localRefsByDir: [String: String] = [:]     // dir -> for-each-ref refs/heads output
     var remoteRefsByDir: [String: String] = [:]    // dir -> for-each-ref refs/remotes/origin output
-    var prListByHead: [String: String] = [:]       // branch -> gh pr list json
+    var prHeadsByRepo: [String: String] = [:]      // "owner/repo" -> gh pr list json (headRefName rows)
 
     func run(_ path: String, _ args: [String]) -> String? {
         if args == ["-l", "-c", "command -v gh"] { return "/usr/bin/gh" }
@@ -21,8 +21,8 @@ private struct FakeBranchRunner: ProcessRunning {
                 return args.contains("refs/heads") ? localRefsByDir[dir] : remoteRefsByDir[dir]
             }
         }
-        if args.first == "pr", args.contains("list"), let hi = args.firstIndex(of: "--head"), hi + 1 < args.count {
-            return prListByHead[args[hi + 1]] ?? "[]"
+        if args.first == "pr", args.contains("list"), let ri = args.firstIndex(of: "--repo"), ri + 1 < args.count {
+            return prHeadsByRepo[args[ri + 1]] ?? "[]"
         }
         return nil
     }
@@ -46,7 +46,7 @@ final class BranchFetcherTests: XCTestCase {
         runner.defaultBranchByDir = ["/root/a": "origin/main"]
         runner.localRefsByDir = ["/root/a": "main\t<me@x.com>\t100\nfeature\t<me@x.com>\t200\nhas-pr\t<me@x.com>\t150\n"]
         runner.remoteRefsByDir = ["/root/a": ""]
-        runner.prListByHead = ["has-pr": #"[{"number":7}]"#, "feature": "[]"]
+        runner.prHeadsByRepo = ["o/a": #"[{"headRefName":"has-pr"}]"#]
 
         let result = fetchBranchesWithoutPR(
             runner: runner, roots: ["/root"],
@@ -94,7 +94,8 @@ final class BranchFetcherTests: XCTestCase {
         let result = fetchBranchesWithoutPR(
             runner: NoGH(), roots: ["/root"],
             subdirectories: { _ in ["/root/a"] },
-            fileExists: { _ in false }
+            fileExists: { _ in false },
+            pathCache: GHPathCache()  // isolated cache so no prior test's resolved path leaks in
         )
         XCTAssertNil(result)
     }
@@ -142,7 +143,7 @@ final class BranchFetcherTests: XCTestCase {
         runner.defaultBranchByDir = ["/root/a": "origin/main"]
         runner.localRefsByDir = ["/root/a": "feature\t<me@x.com>\t200\n"]
         runner.remoteRefsByDir = ["/root/a": ""]
-        runner.prListByHead = ["feature": "not-json"]
+        runner.prHeadsByRepo = ["o/a": "not-json"]
 
         let result = fetchBranchesWithoutPR(
             runner: runner, roots: ["/root"],

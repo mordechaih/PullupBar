@@ -28,19 +28,51 @@ func resolveGHExecutablePath(
     return nil
 }
 
-func fetchPullRequests(runner: ProcessRunning, state: PullRequestFilter = .open, closedLimit: Int = 20) -> [PullRequestInfo]? {
+/// Caches the resolved `gh` path for the process lifetime. Resolving it spawns a login shell
+/// (`$SHELL -l -c …`, which sources the user's full dotfile chain) and the location never
+/// changes within a session, so doing it once instead of on every poll/tab fetch is a large
+/// win. Only successful resolutions are cached; a failed lookup is retried next time (the user
+/// may install `gh` after launch). The first caller resolves while others wait on the lock,
+/// so a cold launch spawns one login shell rather than three at once.
+final class GHPathCache: @unchecked Sendable {
+    static let shared = GHPathCache()
+
+    private let lock = NSLock()
+    private var cached: String?
+
+    func path(
+        runner: ProcessRunning,
+        fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let resolved = resolveGHExecutablePath(runner: runner, fileExists: fileExists)
+        cached = resolved
+        return resolved
+    }
+}
+
+func fetchPullRequests(
+    runner: ProcessRunning,
+    state: PullRequestFilter = .open,
+    closedLimit: Int = 20,
+    pathCache: GHPathCache = .shared
+) -> [PullRequestInfo]? {
     switch state {
-    case .open: return fetchOpenPullRequests(runner: runner)
+    case .open: return fetchOpenPullRequests(runner: runner, pathCache: pathCache)
     // Merged and closed-unmerged PRs come from the same closed fetch; the view splits them by tab.
-    case .merged, .closed: return fetchClosedPullRequests(runner: runner, limit: closedLimit)
+    case .merged, .closed: return fetchClosedPullRequests(runner: runner, limit: closedLimit, pathCache: pathCache)
     // The No PR tab uses fetchBranchesWithoutPR, not this PR fetch; never reached in practice.
     case .noPR: return nil
     }
 }
 
-/// Open PRs are searched and then enriched one-by-one with CI/review/mergeable/diff detail.
-private func fetchOpenPullRequests(runner: ProcessRunning) -> [PullRequestInfo]? {
-    guard let ghPath = resolveGHExecutablePath(runner: runner) else { return nil }
+/// Open PRs are searched and then enriched with CI/review/mergeable/diff detail. The per-PR
+/// `gh pr view` calls are independent, so they run concurrently — load time is one detail call,
+/// not one per PR. Results keep the search order.
+private func fetchOpenPullRequests(runner: ProcessRunning, pathCache: GHPathCache) -> [PullRequestInfo]? {
+    guard let ghPath = pathCache.path(runner: runner) else { return nil }
 
     guard let searchOutput = runner.run(ghPath, [
         "search", "prs", "--author=@me", "--state=open",
@@ -49,36 +81,40 @@ private func fetchOpenPullRequests(runner: ProcessRunning) -> [PullRequestInfo]?
 
     let prs = parseSearchResults(searchData)
 
-    var enriched: [PullRequestInfo] = []
-    for pr in prs {
-        guard let detailOutput = runner.run(ghPath, [
-            "pr", "view", "\(pr.number)", "--repo", pr.repo,
-            "--json", "statusCheckRollup,reviewDecision,mergeable,additions,deletions,changedFiles"
-        ]), let detailData = detailOutput.data(using: .utf8) else {
-            enriched.append(pr)
-            continue
+    return runConcurrently(prs.map { pr in
+        {
+            guard let detailOutput = runner.run(ghPath, [
+                "pr", "view", "\(pr.number)", "--repo", pr.repo,
+                "--json", "statusCheckRollup,reviewDecision,mergeable,additions,deletions,changedFiles"
+            ]), let detailData = detailOutput.data(using: .utf8) else {
+                return pr
+            }
+            return enrichPullRequest(pr, withDetailJSON: detailData)
         }
-        enriched.append(enrichPullRequest(pr, withDetailJSON: detailData))
-    }
-    return enriched
+    })
 }
 
 /// Closed PRs are fetched with two cheap searches (merged vs. closed-unmerged) and are
 /// deliberately not enriched — closed PRs need no CI/review status and per-PR `gh pr view`
 /// calls would make loading slow. Results are merged and sorted newest-closed first.
 /// `limit` caps each of the two searches (configurable via Settings).
-private func fetchClosedPullRequests(runner: ProcessRunning, limit: Int) -> [PullRequestInfo]? {
-    guard let ghPath = resolveGHExecutablePath(runner: runner) else { return nil }
+private func fetchClosedPullRequests(runner: ProcessRunning, limit: Int, pathCache: GHPathCache) -> [PullRequestInfo]? {
+    guard let ghPath = pathCache.path(runner: runner) else { return nil }
 
     let fields = "number,title,url,isDraft,repository,createdAt,closedAt"
     let limitArg = String(max(1, limit))
 
-    let mergedOutput = runner.run(ghPath, [
-        "search", "prs", "--author=@me", "--merged", "--sort", "updated", "--limit", limitArg, "--json", fields
+    // The two searches are independent, so run them concurrently rather than back-to-back.
+    let outputs = runConcurrently([
+        { runner.run(ghPath, [
+            "search", "prs", "--author=@me", "--merged", "--sort", "updated", "--limit", limitArg, "--json", fields
+        ]) },
+        { runner.run(ghPath, [
+            "search", "prs", "--author=@me", "--state=closed", "is:unmerged", "--sort", "updated", "--limit", limitArg, "--json", fields
+        ]) },
     ])
-    let unmergedOutput = runner.run(ghPath, [
-        "search", "prs", "--author=@me", "--state=closed", "is:unmerged", "--sort", "updated", "--limit", limitArg, "--json", fields
-    ])
+    let mergedOutput = outputs[0]
+    let unmergedOutput = outputs[1]
 
     // If both searches failed, the feature is unavailable; a single empty result is fine.
     guard mergedOutput != nil || unmergedOutput != nil else { return nil }

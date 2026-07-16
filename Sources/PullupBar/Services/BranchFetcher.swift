@@ -40,16 +40,23 @@ func discoverClones(
     return clones
 }
 
-/// True when `branch` has (or ever had) a PR in `repo`, in any state. A failed lookup is treated
-/// as "has a PR" so a branch is never shown as PR-less on incomplete information.
-func branchHasPR(repo: String, branch: String, runner: ProcessRunning, ghPath: String) -> Bool {
+/// The set of branch head names for which the user has (or ever had) a PR in `repo`, in any
+/// state — fetched in one `gh pr list` call instead of one lookup per branch. Scoped to
+/// `--author @me`: the No-PR list only ever considers the user's own branches (remote ones are
+/// already filtered to the user's email), so the user's PRs are the only ones that matter, and
+/// scoping keeps the payload tiny on large repos. It's also more correct than listing every PR
+/// under a fixed limit, which would truncate on repos with thousands of PRs and could miss the
+/// user's own older PR. Returns nil on a failed or malformed lookup so the caller can treat every
+/// branch conservatively (as if it has a PR) and never show a branch as PR-less on incomplete
+/// information.
+func prHeadRefs(repo: String, runner: ProcessRunning, ghPath: String) -> Set<String>? {
     guard let output = runner.run(ghPath, [
-        "pr", "list", "--repo", repo, "--head", branch, "--state", "all", "--json", "number"
+        "pr", "list", "--repo", repo, "--author", "@me", "--state", "all", "--limit", "500", "--json", "headRefName"
     ]), let data = output.data(using: .utf8),
-       let items = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
-        return true
+       let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        return nil
     }
-    return !items.isEmpty
+    return Set(items.compactMap { $0["headRefName"] as? String })
 }
 
 /// Gathers local + remote branches without a PR across all discovered clones. Local branches are
@@ -61,49 +68,69 @@ func fetchBranchesWithoutPR(
     roots: [String],
     gitPath: String = defaultGitPath,
     subdirectories: (String) -> [String] = defaultSubdirectories,
-    fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+    pathCache: GHPathCache = .shared
 ) -> [BranchInfo]? {
-    guard let ghPath = resolveGHExecutablePath(runner: runner, fileExists: fileExists) else { return nil }
+    guard let ghPath = pathCache.path(runner: runner, fileExists: fileExists) else { return nil }
 
     let myEmail = runner.run(gitPath, ["config", "--get", "user.email"])?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-    var result: [BranchInfo] = []
-    for clone in discoverClones(roots: roots, runner: runner, gitPath: gitPath, subdirectories: subdirectories) {
-        let dir = clone.dir
+    // Each clone's git reads and PR lookup are independent, so process clones concurrently.
+    let clones = discoverClones(roots: roots, runner: runner, gitPath: gitPath, subdirectories: subdirectories)
+    let perClone = runConcurrently(clones.map { clone in
+        { branchesWithoutPR(for: clone, runner: runner, gitPath: gitPath, ghPath: ghPath, myEmail: myEmail) }
+    })
 
-        let defaultBranch = runner.run(gitPath, ["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "origin/", with: "") ?? "main"
+    return perClone.flatMap { $0 }
+        .sorted { ($0.tipDate ?? .distantPast) > ($1.tipDate ?? .distantPast) }
+}
 
-        let localOut = runner.run(gitPath, [
-            "-C", dir, "for-each-ref",
-            "--format=%(refname:lstrip=2)%09%(authoremail)%09%(committerdate:unix)", "refs/heads"
-        ]) ?? ""
-        let remoteOut = runner.run(gitPath, [
-            "-C", dir, "for-each-ref",
-            "--format=%(refname:lstrip=3)%09%(authoremail)%09%(committerdate:unix)", "refs/remotes/origin"
-        ]) ?? ""
+/// PR-less branches for a single clone. Fetches the repo's PR head refs once, then keeps local
+/// branches (minus the default branch) and author-matched remote branches whose name isn't among
+/// them. A failed PR lookup (`prHeadRefs` == nil) drops every branch — never surface a branch as
+/// PR-less on incomplete information.
+private func branchesWithoutPR(
+    for clone: CloneLocation,
+    runner: ProcessRunning,
+    gitPath: String,
+    ghPath: String,
+    myEmail: String
+) -> [BranchInfo] {
+    let dir = clone.dir
 
-        // name -> (hasLocal, hasRemote, tipDate). Local refs seed the map; remote refs (author-filtered)
-        // add/merge. HEAD and the default branch are never candidates.
-        var byName: [String: (local: Bool, remote: Bool, date: Date?)] = [:]
-        for ref in parseBranchRefs(localOut) where ref.name != defaultBranch && ref.name != "HEAD" {
-            byName[ref.name] = (true, byName[ref.name]?.remote ?? false, ref.tipDate)
-        }
-        for ref in parseBranchRefs(remoteOut)
-            where ref.name != defaultBranch && ref.name != "HEAD" && ref.authorEmail == myEmail {
-            let existing = byName[ref.name]
-            byName[ref.name] = (existing?.local ?? false, true, existing?.date ?? ref.tipDate)
-        }
+    let defaultBranch = runner.run(gitPath, ["-C", dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "origin/", with: "") ?? "main"
 
-        for (name, flags) in byName where !branchHasPR(repo: clone.repo, branch: name, runner: runner, ghPath: ghPath) {
-            result.append(BranchInfo(
-                id: "\(clone.repo)@\(name)@\(dir)", repo: clone.repo, name: name,
-                localCloneDir: dir, hasLocal: flags.local, hasRemote: flags.remote, tipDate: flags.date
-            ))
-        }
+    let localOut = runner.run(gitPath, [
+        "-C", dir, "for-each-ref",
+        "--format=%(refname:lstrip=2)%09%(authoremail)%09%(committerdate:unix)", "refs/heads"
+    ]) ?? ""
+    let remoteOut = runner.run(gitPath, [
+        "-C", dir, "for-each-ref",
+        "--format=%(refname:lstrip=3)%09%(authoremail)%09%(committerdate:unix)", "refs/remotes/origin"
+    ]) ?? ""
+
+    // name -> (hasLocal, hasRemote, tipDate). Local refs seed the map; remote refs (author-filtered)
+    // add/merge. HEAD and the default branch are never candidates.
+    var byName: [String: (local: Bool, remote: Bool, date: Date?)] = [:]
+    for ref in parseBranchRefs(localOut) where ref.name != defaultBranch && ref.name != "HEAD" {
+        byName[ref.name] = (true, byName[ref.name]?.remote ?? false, ref.tipDate)
+    }
+    for ref in parseBranchRefs(remoteOut)
+        where ref.name != defaultBranch && ref.name != "HEAD" && ref.authorEmail == myEmail {
+        let existing = byName[ref.name]
+        byName[ref.name] = (existing?.local ?? false, true, existing?.date ?? ref.tipDate)
     }
 
-    return result.sorted { ($0.tipDate ?? .distantPast) > ($1.tipDate ?? .distantPast) }
+    let headsWithPR = prHeadRefs(repo: clone.repo, runner: runner, ghPath: ghPath)
+    return byName.compactMap { name, flags in
+        // nil lookup -> treat as "has PR" (exclude); otherwise exclude names that have a PR.
+        guard let headsWithPR, !headsWithPR.contains(name) else { return nil }
+        return BranchInfo(
+            id: "\(clone.repo)@\(name)@\(dir)", repo: clone.repo, name: name,
+            localCloneDir: dir, hasLocal: flags.local, hasRemote: flags.remote, tipDate: flags.date
+        )
+    }
 }
