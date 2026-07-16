@@ -85,9 +85,9 @@ private extension View {
     @ViewBuilder
     func rotateOnValueChange(_ value: Int) -> some View {
         if #available(macOS 15.0, *) {
-            self.symbolEffect(.rotate, value: value)
+            self.symbolEffect(.rotate, options: .speed(4), value: value)
         } else if #available(macOS 14.0, *) {
-            self.symbolEffect(.bounce, value: value)
+            self.symbolEffect(.bounce, options: .speed(4), value: value)
         } else {
             self
         }
