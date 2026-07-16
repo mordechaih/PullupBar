@@ -283,7 +283,7 @@ private struct PullRequestChip: View {
     private var titleText: some View {
         Text(pr.title)
             .foregroundColor(.primary)
-            .font(.system(size: 13))
+            .font(.system(size: 13, design: .monospaced))
             .fontWeight(.semibold)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -296,6 +296,7 @@ private struct PullRequestChip: View {
             // verbatim: a plain Text literal is a LocalizedStringKey, which locale-formats the
             // integer and inserts thousands separators (e.g. "1,234"). PR numbers take no commas.
             Text(verbatim: "\(repoShortName)#\(pr.number)")
+                .monospaced()
                 .fixedSize()
                 .layoutPriority(1)
             // Closed PRs aren't enriched with diff stats, so show when they were
