@@ -40,7 +40,7 @@ struct BranchesSectionView: View {
         } else if branches.isEmpty {
             Text("No branches without a PR").foregroundStyle(.secondary).font(.system(size: 12))
         } else {
-            ForEach(branches) { branch in
+            ChipGroup(data: branches) { branch in
                 BranchChip(branch: branch, onCheckout: onCheckout, onCreatePR: onCreatePR, onArchive: onArchive)
             }
         }
@@ -65,11 +65,9 @@ private struct BranchChip: View {
         textContent
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            // The enclosing ChipGroup owns the material backing, corner rounding, and top highlight.
             .overlay(alignment: .trailing) { ChipBlurScrim(isHovered: isHovered) }
             .overlay(alignment: .trailing) { hoverActions.padding(.trailing, 10) }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .chipTopHighlight()
             .contentShape(Rectangle())
             .animation(Self.hoverSpring, value: isHovered)
             .onHover { hovering in

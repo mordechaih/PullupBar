@@ -116,6 +116,8 @@ struct PullRequestsSectionView: View {
             content
                 .padding(.horizontal, Self.pagePadding)
                 .padding(.top, contentTopInset)
+                // Breathing room so the last row doesn't sit flush against the footer at full scroll.
+                .padding(.bottom, Self.pagePadding)
                 .frame(width: Self.pageWidth, alignment: .topLeading)
         }
         .frame(width: Self.pageWidth, height: fixedHeight)
@@ -198,7 +200,7 @@ struct PullRequestsSectionView: View {
         } else if items.isEmpty {
             Text(emptyLabel).foregroundStyle(.secondary)
         } else {
-            ForEach(items) { pr in
+            ChipGroup(data: items) { pr in
                 PullRequestChip(pr: pr, onCheckout: onCheckout)
             }
         }
@@ -222,7 +224,7 @@ private struct LaneSectionView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
-            ForEach(pullRequests) { pr in
+            ChipGroup(data: pullRequests) { pr in
                 PullRequestChip(pr: pr, onCheckout: onCheckout)
             }
         }
@@ -258,13 +260,10 @@ private struct PullRequestChip: View {
         textContent
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            // Scrim + pill overlay the full card (outside the padding) so the frosted region
-            // reaches the card edges; the clip keeps it inside the rounded corners.
+            // The enclosing ChipGroup owns the material backing, corner rounding, and top highlight;
+            // the row just carries its content and the trailing hover pill (scrim + icons).
             .overlay(alignment: .trailing) { ChipBlurScrim(isHovered: isHovered) }
             .overlay(alignment: .trailing) { hoverActions.padding(.trailing, 10) }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .chipTopHighlight()
             .contentShape(Rectangle())
             .animation(Self.hoverSpring, value: isHovered)
             .onHover { hovering in isHovered = hovering }

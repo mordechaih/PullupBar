@@ -43,6 +43,32 @@ struct ChipBlurScrim: View {
     }
 }
 
+/// Stacks row "chips" into a single frosted card: rows sit flush against each other separated by
+/// hairline dividers, with one shared material backing and only the group's outer corners rounded —
+/// the same grouped-list treatment the settings folder list uses. Rows supply their own content and
+/// hover overlays but no longer carry an individual card background/clip, so a lane or tab reads as
+/// one list instead of a stack of separate cards.
+struct ChipGroup<Data: RandomAccessCollection, Row: View>: View where Data.Element: Identifiable {
+    let data: Data
+    @ViewBuilder let row: (Data.Element) -> Row
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(data.enumerated()), id: \.element.id) { index, element in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.1))
+                        .frame(height: 1)
+                }
+                row(element)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .chipTopHighlight()
+    }
+}
+
 extension View {
     /// A hairline highlight along the top edge that fades to transparent toward the bottom — the
     /// subtle "lit from above" edge every chip shares.
