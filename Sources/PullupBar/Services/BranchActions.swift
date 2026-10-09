@@ -1,8 +1,9 @@
 import Foundation
 
 private let defaultGitPath = "/usr/bin/git"
+private let openPath = "/usr/bin/open"
 
-/// The instruction handed to the Claude Code session opened by the Create-PR action.
+/// The instruction handed to the agent session opened by the Create-PR action.
 let prDraftPrompt = "Review this branch's changes against the default branch and open a pull request with a clear title and description using the gh CLI."
 
 /// Switches the clone to `branch`. For a remote-only branch, `git checkout <name>` creates a local
@@ -25,21 +26,32 @@ private func shellQuote(_ s: String) -> String {
     "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
-/// The `.command` script body: enter the clone, check out the branch, then launch Claude Code.
-func prDraftScriptContents(dir: String, branch: String, prompt: String) -> String {
-    """
-    #!/bin/sh
-    cd \(shellQuote(dir)) && git checkout \(shellQuote(branch)) && claude \(shellQuote(prompt))
-    """
+/// A `#!/bin/sh` script that runs `command`. For agents PullupBar checks for, a guard first prints
+/// how to install a missing CLI instead of leaving a bare "command not found".
+private func agentScript(_ agent: CodingAgent, _ command: String) -> String {
+    var lines = ["#!/bin/sh"]
+    if let install = agent.cliInstallCommand {
+        lines += [
+            "if ! command -v \(agent.cliCommand) >/dev/null 2>&1; then",
+            "  echo \(shellQuote("The \(agent.displayName) CLI isn't installed. Install it with: \(install)"))",
+            "  exit 1",
+            "fi",
+        ]
+    }
+    lines.append(command)
+    return lines.joined(separator: "\n")
 }
 
-/// The `.command` script body for an interactive Claude session in a clone: `cd` in, launch
-/// `claude` with no prompt. Used by the "open Claude on checkout" setting.
-func claudeSessionScriptContents(dir: String) -> String {
-    """
-    #!/bin/sh
-    cd \(shellQuote(dir)) && claude
-    """
+/// The `.command` script body: enter the clone, check out the branch, then launch the agent's CLI
+/// with `prompt`.
+func prDraftScriptContents(dir: String, branch: String, prompt: String, agent: CodingAgent) -> String {
+    agentScript(agent, "cd \(shellQuote(dir)) && git checkout \(shellQuote(branch)) && \(agent.cliCommand) \(shellQuote(prompt))")
+}
+
+/// The `.command` script body for an interactive session in a clone: `cd` in, launch the agent's
+/// CLI with no prompt. Used by the "open agent on checkout" setting.
+func agentSessionScriptContents(dir: String, agent: CodingAgent) -> String {
+    agentScript(agent, "cd \(shellQuote(dir)) && \(agent.cliCommand)")
 }
 
 /// Default: write a script to a temp `.command` file and mark it executable.
@@ -69,36 +81,72 @@ private func launchScript(
 ) -> Bool {
     guard let scriptPath = writeScript(contents) else { return false }
     let args = appPath.isEmpty ? [scriptPath] : ["-a", appPath, scriptPath]
-    return runner.run("/usr/bin/open", args) != nil
+    return runner.run(openPath, args) != nil
 }
 
-/// Opens a terminal that checks out `branch` and launches Claude Code with the PR-draft prompt.
-/// `appPath` is the terminal `.app` to use (empty = system default).
+/// Opens `dir` in `agent`'s desktop app, with `prompt` filled in when given. Claude takes both in
+/// one deep link. Cursor's prompt link has no folder parameter, so the folder opens first, then
+/// after `waitForApp` the prompt link lands in that window.
+private func openInDesktopApp(
+    _ agent: CodingAgent,
+    dir: String,
+    prompt: String?,
+    runner: ProcessRunning,
+    waitForApp: (CodingAgent) -> Void
+) -> Bool {
+    switch agent {
+    case .claude:
+        return runner.run(openPath, [claudeDesktopSessionURL(dir: dir, prompt: prompt)]) != nil
+    case .cursor:
+        guard runner.run(openPath, ["-b", agent.desktopAppBundleID, dir]) != nil else { return false }
+        guard let prompt else { return true }
+        waitForApp(agent)
+        return runner.run(openPath, [cursorPromptURL(prompt: prompt)]) != nil
+    }
+}
+
+/// Checks out `branch` and launches `agent` with the PR-draft prompt. In a terminal, the checkout
+/// runs inside the script; for a desktop app, PullupBar checks out first and only opens the app if
+/// that succeeds, matching the script's `&&`.
 @discardableResult
 func launchPRDraftSession(
     _ branch: BranchInfo,
-    appPath: String,
+    agent: CodingAgent,
+    destination: AgentDestination,
     runner: ProcessRunning,
-    writeScript: (String) -> String? = writeCommandScript
+    writeScript: (String) -> String? = writeCommandScript,
+    waitForApp: (CodingAgent) -> Void = waitForDesktopApp
 ) -> Bool {
-    launchScript(
-        prDraftScriptContents(dir: branch.localCloneDir, branch: branch.name, prompt: prDraftPrompt),
-        appPath: appPath, runner: runner, writeScript: writeScript
-    )
+    switch destination {
+    case .terminal(let appPath):
+        return launchScript(
+            prDraftScriptContents(dir: branch.localCloneDir, branch: branch.name, prompt: prDraftPrompt, agent: agent),
+            appPath: appPath, runner: runner, writeScript: writeScript
+        )
+    case .desktopApp:
+        guard checkoutBranchLocally(branch, runner: runner) else { return false }
+        return openInDesktopApp(agent, dir: branch.localCloneDir, prompt: prDraftPrompt, runner: runner, waitForApp: waitForApp)
+    }
 }
 
-/// Opens a terminal with an interactive Claude Code session in `dir` (no prompt). Used after a
-/// checkout when the "open Claude on checkout" setting is enabled. `appPath` is the terminal `.app`
-/// to use (empty = system default).
+/// Opens an interactive `agent` session in `dir` (no prompt). Used after a checkout when the
+/// "open agent on checkout" setting is enabled.
 @discardableResult
-func launchClaudeSession(
+func launchAgentSession(
     dir: String,
-    appPath: String,
+    agent: CodingAgent,
+    destination: AgentDestination,
     runner: ProcessRunning,
-    writeScript: (String) -> String? = writeCommandScript
+    writeScript: (String) -> String? = writeCommandScript,
+    waitForApp: (CodingAgent) -> Void = waitForDesktopApp
 ) -> Bool {
-    launchScript(
-        claudeSessionScriptContents(dir: dir),
-        appPath: appPath, runner: runner, writeScript: writeScript
-    )
+    switch destination {
+    case .terminal(let appPath):
+        return launchScript(
+            agentSessionScriptContents(dir: dir, agent: agent),
+            appPath: appPath, runner: runner, writeScript: writeScript
+        )
+    case .desktopApp:
+        return openInDesktopApp(agent, dir: dir, prompt: nil, runner: runner, waitForApp: waitForApp)
+    }
 }

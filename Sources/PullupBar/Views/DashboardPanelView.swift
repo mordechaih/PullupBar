@@ -28,7 +28,8 @@ struct DashboardPanelView: View {
                     branchesUnavailable: store.branchesUnavailable,
                     onCheckoutBranch: { store.checkoutBranch($0) },
                     onCreatePR: { store.createPRForBranch($0) },
-                    onArchiveBranch: { store.archiveBranch($0) }
+                    onArchiveBranch: { store.archiveBranch($0) },
+                    agentName: store.settings.agent.displayName
                 )
             }
             Divider()
