@@ -147,12 +147,49 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(b.terminalAppPath, "/Applications/iTerm.app")
     }
 
-    func testOpenClaudeOnCheckoutDefaultsFalseAndPersists() {
-        let defaults = UserDefaults(suiteName: "claudecheckout-\(UUID().uuidString)")!
+    func testOpenAgentOnCheckoutDefaultsFalseAndPersists() {
+        let defaults = UserDefaults(suiteName: "agentcheckout-\(UUID().uuidString)")!
         let a = SettingsStore(defaults: defaults)
-        XCTAssertFalse(a.openClaudeOnCheckout)
-        a.openClaudeOnCheckout = true
+        XCTAssertFalse(a.openAgentOnCheckout)
+        a.openAgentOnCheckout = true
         let b = SettingsStore(defaults: defaults)
-        XCTAssertTrue(b.openClaudeOnCheckout)
+        XCTAssertTrue(b.openAgentOnCheckout)
+    }
+
+    func testOpenAgentOnCheckoutReadsValueSavedUnderOldClaudeKey() {
+        let defaults = UserDefaults(suiteName: "legacycheckout-\(UUID().uuidString)")!
+        defaults.set(true, forKey: "openClaudeOnCheckout")
+        XCTAssertTrue(SettingsStore(defaults: defaults).openAgentOnCheckout)
+    }
+
+    func testAgentDefaultsClaudeAndPersists() {
+        let defaults = UserDefaults(suiteName: "agent-\(UUID().uuidString)")!
+        let a = SettingsStore(defaults: defaults)
+        XCTAssertEqual(a.agent, .claude)
+        a.agent = .cursor
+        let b = SettingsStore(defaults: defaults)
+        XCTAssertEqual(b.agent, .cursor)
+    }
+
+    func testOpenInDesktopAppDefaultsFalseAndPersists() {
+        let defaults = UserDefaults(suiteName: "desktop-\(UUID().uuidString)")!
+        let a = SettingsStore(defaults: defaults)
+        XCTAssertFalse(a.openInDesktopApp)
+        a.openInDesktopApp = true
+        let b = SettingsStore(defaults: defaults)
+        XCTAssertTrue(b.openInDesktopApp)
+    }
+
+    func testDestinationUsesDesktopAppOnlyWhenTheAgentsAppIsInstalled() {
+        let settings = SettingsStore(
+            defaults: UserDefaults(suiteName: "destination-\(UUID().uuidString)")!,
+            isDesktopAppInstalled: { $0 == .claude }
+        )
+        settings.terminalAppPath = "/Applications/Ghostty.app"
+        XCTAssertEqual(settings.destination, .terminal(appPath: "/Applications/Ghostty.app"))
+        settings.openInDesktopApp = true
+        XCTAssertEqual(settings.destination, .desktopApp)
+        settings.agent = .cursor
+        XCTAssertEqual(settings.destination, .terminal(appPath: "/Applications/Ghostty.app"))
     }
 }

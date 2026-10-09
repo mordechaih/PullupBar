@@ -16,6 +16,7 @@ struct PullRequestsSectionView: View {
     let onCheckoutBranch: (BranchInfo) -> Void
     let onCreatePR: (BranchInfo) -> Void
     let onArchiveBranch: (BranchInfo) -> Void
+    let agentName: String
 
     /// One page spans the full window width; the 16pt horizontal breathing room lives *inside*
     /// each page (see `page`) so the clip sits at the window edge and the spring overshoot slides
@@ -146,7 +147,8 @@ struct PullRequestsSectionView: View {
             unavailable: branchesUnavailable,
             onCheckout: onCheckoutBranch,
             onCreatePR: onCreatePR,
-            onArchive: onArchiveBranch
+            onArchive: onArchiveBranch,
+            agentName: agentName
         )
     }
 

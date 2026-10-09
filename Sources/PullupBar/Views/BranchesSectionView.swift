@@ -10,6 +10,8 @@ struct BranchesSectionView: View {
     let onCheckout: (BranchInfo) -> Void
     let onCreatePR: (BranchInfo) -> Void
     let onArchive: (BranchInfo) -> Void
+    /// Names the agent in the Create-PR button's tooltip.
+    let agentName: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -41,7 +43,7 @@ struct BranchesSectionView: View {
             Text("No branches without a PR").foregroundStyle(.secondary).font(.system(size: 12))
         } else {
             ChipGroup(data: branches) { branch in
-                BranchChip(branch: branch, onCheckout: onCheckout, onCreatePR: onCreatePR, onArchive: onArchive)
+                BranchChip(branch: branch, onCheckout: onCheckout, onCreatePR: onCreatePR, onArchive: onArchive, agentName: agentName)
             }
         }
     }
@@ -55,6 +57,7 @@ private struct BranchChip: View {
     let onCheckout: (BranchInfo) -> Void
     let onCreatePR: (BranchInfo) -> Void
     let onArchive: (BranchInfo) -> Void
+    let agentName: String
 
     @State private var isHovered = false
     @State private var confirmingArchive = false
@@ -137,7 +140,7 @@ private struct BranchChip: View {
                     OcticonImage(paths: Octicons.gitBranchCheck)
                 }
                 .staggeredScale(isActive: isHovered, index: 1)
-                BranchIconButton(help: "Draft a PR with Claude") {
+                BranchIconButton(help: "Draft a PR with \(agentName)") {
                     onCreatePR(branch)
                 } icon: {
                     Image(systemName: "wand.and.stars")

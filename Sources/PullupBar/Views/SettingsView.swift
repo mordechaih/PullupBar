@@ -23,8 +23,9 @@ struct SettingsView: View {
                 refreshIntervalSection
                 closedCountSection
                 launchAtLoginSection
-                openClaudeOnCheckoutSection
-                terminalAppSection
+                openAgentOnCheckoutSection
+                agentSection
+                openInSection
             }
             .padding(16)
             .frame(width: Self.width, alignment: .leading)
@@ -149,48 +150,101 @@ struct SettingsView: View {
         }
     }
 
-    private var openClaudeOnCheckoutSection: some View {
+    private var openAgentOnCheckoutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: $settings.openClaudeOnCheckout) {
-                Text("Open Claude on checkout").font(.system(size: 13, weight: .bold))
+            Toggle(isOn: $settings.openAgentOnCheckout) {
+                Text("Open agent on checkout").font(.system(size: 13, weight: .bold))
             }
-            Text("After checking out a PR or branch, also open a Claude Code session in the clone folder, using the terminal app below.")
+            Text("After checking out a PR or branch, also open \(settings.agent.displayName) in the clone folder.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var terminalAppSection: some View {
+    private var agentSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Terminal app").font(.system(size: 13, weight: .bold))
-            Text("Opens the Claude Code sessions launched by \u{201C}Create PR\u{201D} and by \u{201C}Open Claude on checkout\u{201D}.")
+            Text("Agent").font(.system(size: 13, weight: .bold))
+            Picker("", selection: $settings.agent) {
+                ForEach(CodingAgent.allCases, id: \.self) { agent in
+                    Text(agent.displayName).tag(agent)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+        }
+    }
+
+    /// One menu for where sessions open: the agent's desktop app (when installed) above a divider,
+    /// then the terminals and "Choose terminal app…" as one group.
+    private var openInSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Open in").font(.system(size: 13, weight: .bold))
+            Text("Used by \u{201C}Create PR\u{201D} and by \u{201C}Open agent on checkout\u{201D}.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Menu {
-                Button { settings.terminalAppPath = "" } label: {
+                if let appPath = settings.agent.desktopAppPath() {
+                    Button { settings.openInDesktopApp = true } label: {
+                        appMenuLabel(name: settings.agent.desktopAppName, path: appPath)
+                    }
+                    Divider()
+                }
+                Button { selectTerminal("") } label: {
                     appMenuLabel(name: "Terminal", path: "")
                 }
                 ForEach(TerminalApp.detectInstalled(), id: \.path) { app in
-                    Button { settings.terminalAppPath = app.path } label: {
+                    Button { selectTerminal(app.path) } label: {
                         appMenuLabel(name: app.name, path: app.path)
                     }
                 }
-                Divider()
-                Button("Choose app…") { chooseTerminalApp() }
+                Button { chooseTerminalApp() } label: {
+                    Label {
+                        Text("Choose terminal app…")
+                    } icon: {
+                        Image(nsImage: TerminalApp.symbolIcon("plus"))
+                    }
+                }
             } label: {
                 HStack {
-                    Image(nsImage: TerminalApp.icon(forPath: settings.terminalAppPath))
+                    Image(nsImage: selectedTargetIcon)
                         .resizable().frame(width: 16, height: 16)
-                    Text(terminalAppLabel)
+                    Text(selectedTargetLabel)
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 .font(.system(size: 12))
+                .padding(8)
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            // A plain button-style menu draws the label as laid out (full width, own chevron), so
+            // the whole row is clickable; `.borderlessButton` would collapse it to a compact control.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            // Same grouped-list look as the repository folders above.
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            if let install = missingCLIInstallCommand {
+                (Text("The \(settings.agent.displayName) CLI isn\u{2019}t installed. Run ")
+                    + Text(install).font(.system(.caption, design: .monospaced))
+                    + Text(" in a terminal, then try again."))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// The install command to show when sessions open in a terminal and the agent's CLI (for agents
+    /// PullupBar checks) isn't installed; nil otherwise.
+    private var missingCLIInstallCommand: String? {
+        guard case .terminal = settings.destination,
+              let install = settings.agent.cliInstallCommand,
+              !isCLIInstalled(settings.agent) else { return nil }
+        return install
     }
 
     /// A menu row pairing an app's Finder icon with its name.
@@ -203,9 +257,22 @@ struct SettingsView: View {
         }
     }
 
-    /// Display name for the current selection: empty means the system default (Terminal), otherwise
-    /// the chosen `.app`'s name.
-    private var terminalAppLabel: String {
+    private func selectTerminal(_ path: String) {
+        settings.terminalAppPath = path
+        settings.openInDesktopApp = false
+    }
+
+    private var selectedTargetIcon: NSImage {
+        if case .desktopApp = settings.destination, let appPath = settings.agent.desktopAppPath() {
+            return TerminalApp.icon(forPath: appPath)
+        }
+        return TerminalApp.icon(forPath: settings.terminalAppPath)
+    }
+
+    /// Display name for the current selection: the agent's desktop app, or for a terminal, empty
+    /// means the system default (Terminal), otherwise the chosen `.app`'s name.
+    private var selectedTargetLabel: String {
+        if case .desktopApp = settings.destination { return settings.agent.desktopAppName }
         let path = settings.terminalAppPath
         guard !path.isEmpty else { return "Terminal" }
         return (path as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "")
@@ -219,9 +286,9 @@ struct SettingsView: View {
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.prompt = "Choose"
-        panel.message = "Choose the terminal app to open Claude sessions in"
+        panel.message = "Choose the terminal app to open agent sessions in"
         if panel.runModal() == .OK, let url = panel.url {
-            settings.terminalAppPath = url.path
+            selectTerminal(url.path)
         }
     }
 

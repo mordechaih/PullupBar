@@ -40,4 +40,20 @@ extension TerminalApp {
         sized.size = NSSize(width: size, height: size)
         return sized
     }
+
+    /// An SF Symbol centered on a `size`-point square template image, so a symbol menu item's title
+    /// lines up with the titles next to the 16pt app icons. Template, so it follows the menu's
+    /// highlight and appearance.
+    static func symbolIcon(_ name: String, size: CGFloat = 16) -> NSImage {
+        let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            guard let symbol else { return false }
+            let s = symbol.size
+            symbol.draw(in: NSRect(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2, width: s.width, height: s.height))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }

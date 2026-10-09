@@ -92,12 +92,13 @@ final class DashboardStore: ObservableObject {
 
     func checkoutBranch(_ branch: BranchInfo) {
         let runner = processRunner
-        let openClaude = settings.openClaudeOnCheckout
-        let appPath = settings.terminalAppPath
+        let openAgent = settings.openAgentOnCheckout
+        let agent = settings.agent
+        let destination = settings.destination
         Task.detached(priority: .utility) {
             checkoutBranchLocally(branch, runner: runner)
-            if openClaude {
-                launchClaudeSession(dir: branch.localCloneDir, appPath: appPath, runner: runner)
+            if openAgent {
+                launchAgentSession(dir: branch.localCloneDir, agent: agent, destination: destination, runner: runner)
             }
         }
     }
@@ -113,8 +114,9 @@ final class DashboardStore: ObservableObject {
 
     func createPRForBranch(_ branch: BranchInfo) {
         let runner = processRunner
-        let appPath = settings.terminalAppPath
-        Task.detached(priority: .utility) { launchPRDraftSession(branch, appPath: appPath, runner: runner) }
+        let agent = settings.agent
+        let destination = settings.destination
+        Task.detached(priority: .utility) { launchPRDraftSession(branch, agent: agent, destination: destination, runner: runner) }
     }
 
     /// Switch filters, loading each tab's data on first access: closed PRs for Merged/Closed
@@ -141,12 +143,13 @@ final class DashboardStore: ObservableObject {
     func checkoutPullRequest(_ pr: PullRequestInfo) {
         let runner = processRunner
         let roots = settings.repoSearchRoots
-        let openClaude = settings.openClaudeOnCheckout
-        let appPath = settings.terminalAppPath
+        let openAgent = settings.openAgentOnCheckout
+        let agent = settings.agent
+        let destination = settings.destination
         Task.detached(priority: .utility) {
             checkoutPullRequestBranch(repo: pr.repo, number: pr.number, runner: runner, searchRoots: roots)
-            if openClaude, let dir = localRepoDirectory(forRepo: pr.repo, searchRoots: roots) {
-                launchClaudeSession(dir: dir, appPath: appPath, runner: runner)
+            if openAgent, let dir = localRepoDirectory(forRepo: pr.repo, searchRoots: roots) {
+                launchAgentSession(dir: dir, agent: agent, destination: destination, runner: runner)
             }
         }
     }
