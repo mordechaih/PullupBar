@@ -12,7 +12,7 @@ struct PullupBarApp: App {
             Group {
                 if store.badgeCount > 0 {
                     Image(nsImage: renderBadgeIcon(count: store.badgeCount))
-                        .renderingMode(.original)
+                        .renderingMode(.template)
                 } else {
                     Image(systemName: "gauge.medium")
                 }
@@ -69,6 +69,7 @@ func renderBadgeIcon(count: Int) -> NSImage {
         return NSImage(size: CGSize(width: logicalSize, height: logicalSize))
     }
     let image = NSImage(cgImage: cgImage, size: CGSize(width: logicalSize, height: logicalSize))
-    image.isTemplate = false
+    // Template so the system tints/dims it like other menu bar items (e.g. on inactive displays).
+    image.isTemplate = true
     return image
 }
